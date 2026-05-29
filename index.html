@@ -148,6 +148,21 @@
   }
   .name-field input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
 
+  /* candidate selection on home */
+  .cand-grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; margin: 22px 0 18px; }
+  .nb-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .nb-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 10px; }
+  .nb-card input, .nb-card select {
+    width: 100%; font-size: 16px; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  }
+  .nb-card input { font-family: "DM Serif Display", serif; }
+  .nb-card input:focus, .nb-card select:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .nb-card select:disabled { color: var(--muted); background: #faf8f4; }
+  .nb-hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .nb-hint b { color: var(--ink); }
+  @media (max-width: 640px) { .cand-grid { grid-template-columns: 1fr; } }
+
   .stage-cards { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
   .stage-card {
     text-align: left; background: var(--card);
@@ -390,7 +405,11 @@ const state = {
   screen: "signin",          // signin | home | interview | success
   accessToken: null,
   userEmail: null,
-  candidateName: "",
+  candidateName: "",         // free-text name for a NEW (Stage 1) candidate
+  selectedExisting: "",      // name picked from dropdown for Stage 2/3
+  candidates: [],            // [{name, stage, status, date, stageNum}] read from the sheet
+  candidatesLoading: false,
+  candidatesError: null,
   stage: null,               // 1 | 2 | 3
   sectionIdx: 0,
   data: {},                  // per-stage: { responses:{}, checks:{}, scores:[], decision:null, note:"" }
@@ -705,6 +724,7 @@ function initAuth() {
           state.screen = "home";
         }
         render();
+        loadCandidates();
         if (pendingAfterAuth) { const fn = pendingAfterAuth; pendingAfterAuth = null; fn(); }
       }
     },
@@ -717,6 +737,60 @@ function initAuth() {
 
 let pendingAfterAuth = null;
 let authError = null;
+
+/* read existing candidates from the sheet (column A name, B date, C stage, D status) */
+async function loadCandidates() {
+  if (!state.accessToken || credsMissing()) return;
+  state.candidatesLoading = true;
+  state.candidatesError = null;
+  if (state.screen === "home") render();
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A2:D`;
+    const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` } });
+    if (res.status === 401) {
+      state.accessToken = null;
+      state.candidatesLoading = false;
+      state.candidatesError = "Session expired — sign in again.";
+      if (state.screen === "home") render();
+      return;
+    }
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${res.status}: ${txt.slice(0, 140)}`);
+    }
+    const data = await res.json();
+    const rows = data.values || [];
+    const map = {};
+    rows.forEach((r) => {
+      const name = (r[0] || "").trim();
+      if (!name) return;
+      const stage = (r[2] || "").trim();
+      const status = (r[3] || "").trim();
+      const date = (r[1] || "").trim();
+      const stageNum = parseInt((String(stage).match(/\d/) || [0])[0], 10) || 0;
+      const prev = map[name];
+      if (!prev || stageNum >= prev.stageNum) {
+        map[name] = { name, stage, status, date, stageNum };
+      }
+    });
+    state.candidates = Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+    state.candidatesLoading = false;
+    if (state.screen === "home") render();
+  } catch (ex) {
+    state.candidatesLoading = false;
+    state.candidatesError = (ex && ex.message) ? ex.message : String(ex);
+    if (state.screen === "home") render();
+  }
+}
+
+function showHomeError(msg) {
+  const box = document.getElementById("home-error");
+  if (box) {
+    box.classList.remove("hide");
+    box.textContent = msg;
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
 
 function requestSignIn() {
   if (credsMissing()) return;
@@ -775,18 +849,45 @@ function screenHome() {
       </button>`;
   }).join("");
 
+  // returning-candidate dropdown
+  let dropdown;
+  if (state.candidatesLoading) {
+    dropdown = `<select disabled><option>Loading candidates…</option></select>`;
+  } else if (state.candidatesError) {
+    dropdown = `<select disabled><option>Couldn’t load the list</option></select>
+      <div class="nb-hint" style="color:var(--reject)">${esc(state.candidatesError)} <button class="link-btn" data-act="reload-candidates">Try again</button></div>`;
+  } else if (!state.candidates.length) {
+    dropdown = `<select disabled><option>No candidates yet — run a Stage 1 first</option></select>`;
+  } else {
+    const opts = state.candidates.map((c) => {
+      const lbl = `${c.name}${c.stage ? " — " + c.stage : ""}${c.status ? " · " + c.status : ""}`;
+      return `<option value="${esc(c.name)}" ${state.selectedExisting === c.name ? "selected" : ""}>${esc(lbl)}</option>`;
+    }).join("");
+    dropdown = `<select data-field="existing"><option value="">— pick a candidate —</option>${opts}</select>`;
+  }
+  const refreshBtn = state.candidatesLoading ? "" : `<button class="link-btn" data-act="reload-candidates" style="float:right;font-size:12px;text-transform:none;letter-spacing:0">Refresh</button>`;
+
   return `
     ${topbar()}
     <div class="wrap">
       <div class="home-head">
         <div class="brand-mark">New interview</div>
         <h1>Who are you interviewing today?</h1>
-        <p>Enter the candidate’s name, then choose your stage.</p>
+        <p>Adding a <b>new</b> candidate? Type their name (that’s a Stage 1 screen). Continuing with someone? Pick them from the list so all their stages stay together.</p>
       </div>
-      <div class="name-field">
-        <label for="cand">Candidate name</label>
-        <input id="cand" type="text" placeholder="e.g. Jordan Rivera" value="${esc(state.candidateName)}" data-field="candidateName" autocomplete="off" />
+      <div class="cand-grid">
+        <div class="nb-card">
+          <div class="nb-title">New candidate</div>
+          <input type="text" placeholder="e.g. Jordan Rivera" value="${esc(state.candidateName)}" data-field="candidateName" autocomplete="off" />
+          <div class="nb-hint">Use for <b>Stage 1</b> phone screens.</div>
+        </div>
+        <div class="nb-card">
+          <div class="nb-title">Returning candidate ${refreshBtn}</div>
+          ${dropdown}
+          <div class="nb-hint">Required for <b>Stage 2 &amp; Stage 3</b>.</div>
+        </div>
       </div>
+      <div class="inline-error hide" id="home-error"></div>
       <div class="stage-cards">${cards}</div>
     </div>`;
 }
@@ -999,6 +1100,10 @@ function wireTextareas() {
   if (cand) {
     cand.addEventListener("input", () => { state.candidateName = cand.value; });
   }
+  const existing = document.querySelector("select[data-field='existing']");
+  if (existing) {
+    existing.addEventListener("change", () => { state.selectedExisting = existing.value; });
+  }
 }
 
 function autosize(ta) {
@@ -1042,9 +1147,26 @@ document.addEventListener("click", (e) => {
     return render();
   }
 
+  if (act === "reload-candidates") return loadCandidates();
+
   if (act === "select-stage") {
-    state.stage = parseInt(t.getAttribute("data-stage"), 10);
-    ensureStageData(state.stage);
+    const stage = parseInt(t.getAttribute("data-stage"), 10);
+    if (stage === 1) {
+      const nm = (state.candidateName || "").trim();
+      if (!nm) { showHomeError("Type the new candidate’s name in the “New candidate” box first."); return; }
+      // guard against accidentally re-screening an existing candidate
+      if (state.candidates.some((c) => c.name.toLowerCase() === nm.toLowerCase())) {
+        showHomeError(`“${nm}” is already in the tracker. For a later round, pick them from the “Returning candidate” list instead. (If this is genuinely a different person, add a distinguishing detail to the name.)`);
+        return;
+      }
+      state.candidateName = nm;
+    } else {
+      const sel = (state.selectedExisting || "").trim();
+      if (!sel) { showHomeError(`For Stage ${stage}, pick the candidate from the “Returning candidate” dropdown so their results land on the right person.`); return; }
+      state.candidateName = sel;
+    }
+    state.stage = stage;
+    ensureStageData(stage);
     state.sectionIdx = 0;
     state.screen = "interview";
     return render();
@@ -1097,11 +1219,14 @@ document.addEventListener("click", (e) => {
 
   if (act === "new-interview") {
     state.candidateName = "";
+    state.selectedExisting = "";
     state.stage = null;
     state.data = {};
     state.sectionIdx = 0;
     state.screen = "home";
-    return render();
+    render();
+    loadCandidates();
+    return;
   }
 });
 
