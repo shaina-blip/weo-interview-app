@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WEO Interview App</title>
+
+<!-- Google Identity Services (OAuth) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+
+<style>
+  /* =====================================================================
+     SETUP — fill these two constants in (see on-screen banner / spec §5).
+     They are defined in JavaScript near the bottom of this file:
+        const CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+        const SHEET_ID  = "YOUR_GOOGLE_SHEET_ID";
+     ===================================================================== */
+
+  :root {
+    --bg: #F5F3EE;
+    --card: #FFFFFF;
+    --ink: #2A2622;
+    --muted: #8A817A;
+    --line: #E7E1D8;
+
+    /* default theme (overridden per stage) */
+    --primary: #2A2622;
+    --light: #F0ECE5;
+
+    /* decision colors */
+    --pass: #3A7D20;
+    --pass-bg: #EAF3DE;
+    --hold: #B07A00;
+    --hold-bg: #FBF1DC;
+    --reject: #B3261E;
+    --reject-bg: #FBE6E4;
+  }
+
+  /* per-stage theming */
+  .stage-1 { --primary: #72243E; --light: #FBEAF0; }
+  .stage-2 { --primary: #27500A; --light: #EAF3DE; }
+  .stage-3 { --primary: #3C3489; --light: #EEEDFE; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .serif {
+    font-family: "DM Serif Display", Georgia, serif;
+    font-weight: 400;
+    letter-spacing: 0.2px;
+  }
+
+  button { font-family: inherit; cursor: pointer; }
+  textarea { font-family: inherit; }
+
+  /* ---------- Setup banner ---------- */
+  #setup-banner {
+    display: none;
+    background: #3A2A12;
+    color: #FFF4E2;
+    padding: 12px 18px;
+    font-size: 14px;
+    line-height: 1.45;
+    border-bottom: 2px solid #B07A00;
+  }
+  #setup-banner.show { display: block; }
+  #setup-banner code {
+    background: rgba(255,255,255,0.14);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  #setup-banner b { color: #FFD79B; }
+
+  /* ---------- layout shells ---------- */
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 22px 80px; }
+  .center-screen {
+    min-height: 78vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 22px;
+  }
+
+  /* ---------- brand ---------- */
+  .brand-mark {
+    font-family: "DM Serif Display", serif;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.04);
+  }
+
+  /* ---------- sign-in ---------- */
+  .signin-card { max-width: 440px; width: 100%; text-align: center; }
+  .signin-card h1 { font-size: 34px; margin: 14px 0 6px; }
+  .signin-card p.sub { color: var(--muted); margin: 0 0 26px; }
+
+  .gbtn {
+    display: inline-flex; align-items: center; gap: 12px;
+    background: #fff; color: #3c4043;
+    border: 1px solid #dadce0; border-radius: 10px;
+    padding: 12px 20px; font-size: 15px; font-weight: 600;
+    transition: box-shadow .15s, background .15s;
+  }
+  .gbtn:hover { box-shadow: 0 1px 3px rgba(60,64,67,.3); background: #fafafb; }
+  .gbtn:disabled { opacity: .5; cursor: not-allowed; }
+  .gbtn svg { width: 18px; height: 18px; }
+
+  /* ---------- home ---------- */
+  .home-head { margin-bottom: 22px; }
+  .home-head h1 { font-size: 30px; margin: 6px 0 4px; }
+  .home-head p { color: var(--muted); margin: 0; }
+
+  .name-field { margin: 22px 0 30px; }
+  .name-field label {
+    display: block; font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .name-field input {
+    width: 100%; font-size: 18px; padding: 13px 16px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #fff; color: var(--ink);
+    font-family: "DM Serif Display", serif;
+  }
+  .name-field input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+
+  .stage-cards { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+  .stage-card {
+    text-align: left; background: var(--card);
+    border: 1px solid var(--line); border-top: 5px solid var(--primary);
+    border-radius: 14px; padding: 22px 20px;
+    transition: transform .12s, box-shadow .15s;
+  }
+  .stage-card:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(0,0,0,0.08); }
+  .stage-card .num { font-family: "DM Serif Display", serif; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--primary); }
+  .stage-card h3 { font-size: 22px; margin: 6px 0 10px; color: var(--ink); }
+  .stage-card .who { font-size: 14px; color: var(--ink); font-weight: 600; }
+  .stage-card .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .stage-card .pill {
+    display: inline-block; margin-top: 14px; font-size: 12px; font-weight: 600;
+    color: var(--primary); background: var(--light);
+    padding: 5px 12px; border-radius: 999px;
+  }
+
+  /* ---------- interview screen ---------- */
+  .progress-wrap { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: 4px; }
+  .progress-track { height: 5px; background: var(--line); border-radius: 999px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: var(--primary); transition: width .25s ease; }
+
+  .iv-top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin: 16px 0 18px; flex-wrap: wrap;
+  }
+  .iv-top h2 { font-size: 24px; margin: 0; color: var(--primary); }
+  .iv-top .candidate { font-size: 14px; color: var(--muted); }
+  .iv-top .candidate b { color: var(--ink); font-family: "DM Serif Display", serif; font-weight: 400; font-size: 16px; }
+
+  .iv-grid { display: grid; grid-template-columns: 220px 1fr; gap: 26px; align-items: start; }
+  .sec-nav, .sec-main { min-width: 0; }
+
+  /* section nav */
+  .sec-nav { position: sticky; top: 70px; }
+  .sec-nav ul { list-style: none; margin: 0; padding: 0; }
+  .sec-nav li {
+    padding: 9px 12px; border-left: 3px solid transparent;
+    color: var(--muted); font-size: 14px; cursor: pointer; border-radius: 0 8px 8px 0;
+    transition: background .12s;
+  }
+  .sec-nav li:hover { background: var(--light); }
+  .sec-nav li.active { border-left-color: var(--primary); color: var(--primary); font-weight: 700; background: var(--light); }
+  .sec-nav li .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); margin-left: 6px; opacity: 0; }
+  .sec-nav li.done .dot { opacity: 1; }
+
+  .sec-main h3.sec-title { font-size: 22px; margin: 0 0 18px; color: var(--ink); }
+
+  /* blocks */
+  .block { margin-bottom: 20px; }
+
+  .callout {
+    border-left: 4px solid var(--primary);
+    background: var(--light);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 18px;
+  }
+  .callout .script { font-style: italic; font-size: 16px; color: var(--ink); }
+  .callout .note { margin-top: 10px; font-size: 14px; color: var(--ink); font-style: normal; }
+  .callout .note b { color: var(--primary); }
+
+  .info-note {
+    background: #fff; border: 1px dashed var(--line);
+    border-radius: 10px; padding: 12px 14px; font-size: 13.5px; color: var(--muted);
+  }
+  .info-note b { color: var(--primary); }
+
+  .check-group { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .check-group .ck-head { padding: 12px 16px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .check-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 13px 16px; border-bottom: 1px solid var(--line);
+    cursor: pointer; transition: background .1s;
+  }
+  .check-item:last-child { border-bottom: none; }
+  .check-item:hover { background: var(--light); }
+  .check-box {
+    flex: 0 0 auto; width: 22px; height: 22px; border: 2px solid var(--primary);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    margin-top: 1px; transition: background .1s;
+  }
+  .check-box svg { width: 14px; height: 14px; opacity: 0; }
+  .check-item.checked .check-box { background: var(--primary); }
+  .check-item.checked .check-box svg { opacity: 1; }
+  .check-item .ck-text { font-size: 15px; }
+  .check-item.checked .ck-text { text-decoration: line-through; color: var(--muted); }
+
+  .qa { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .qa .q { background: var(--light); padding: 13px 16px; font-size: 15.5px; font-weight: 600; color: var(--ink); }
+  .qa .q .qnum { color: var(--primary); font-weight: 700; margin-right: 8px; }
+  .field-label { font-size: 13px; font-weight: 600; color: var(--ink); padding: 13px 16px 0; }
+  .qa textarea, .fieldbox textarea {
+    width: 100%; border: none; resize: none; min-height: 64px;
+    padding: 12px 16px; font-size: 15px; color: var(--ink); background: #fff;
+    line-height: 1.5; display: block;
+  }
+  .qa textarea:focus, .fieldbox textarea:focus, .note-area:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
+  .fieldbox { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+
+  .options { display: grid; gap: 12px; }
+  .opt {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  }
+  .opt .opt-tag { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--primary); }
+  .opt .opt-text { font-style: italic; margin-top: 6px; font-size: 15px; }
+
+  /* scores */
+  .score-dim { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .score-dim .lbl { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  .score-btns { display: flex; gap: 8px; }
+  .score-btns button {
+    flex: 1; padding: 12px 0; font-size: 17px; font-weight: 700;
+    border: 1.5px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink);
+    transition: all .1s;
+  }
+  .score-btns button:hover { border-color: var(--primary); }
+  .score-btns button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .score-dim .desc { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  /* decision */
+  .decision-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .decision-row button {
+    padding: 14px 8px; border-radius: 11px; border: 1.5px solid var(--line);
+    background: #fff; font-size: 14px; font-weight: 700; color: var(--ink); transition: all .1s;
+  }
+  .decision-row button:hover { border-color: var(--ink); }
+  .decision-row button.sel.pass   { background: var(--pass-bg);   border-color: var(--pass);   color: var(--pass); }
+  .decision-row button.sel.hold   { background: var(--hold-bg);   border-color: var(--hold);   color: var(--hold); }
+  .decision-row button.sel.reject { background: var(--reject-bg); border-color: var(--reject); color: var(--reject); }
+
+  /* recommendation */
+  .reco { border-radius: 12px; padding: 14px 16px; margin: 2px 0 4px; border: 1.5px solid var(--line); }
+  .reco-pending { background: #fff; color: var(--muted); font-size: 14px; }
+  .reco-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; opacity: .85; }
+  .reco-pick { font-family: "DM Serif Display", serif; font-size: 21px; margin: 3px 0 5px; }
+  .reco-why { font-size: 13.5px; line-height: 1.45; }
+  .reco-why .reco-stat { color: var(--muted); display: inline-block; margin-top: 3px; }
+  .reco-pass   { background: var(--pass-bg);   border-color: var(--pass);   color: var(--pass); }
+  .reco-hold   { background: var(--hold-bg);   border-color: var(--hold);   color: var(--hold); }
+  .reco-reject { background: var(--reject-bg); border-color: var(--reject); color: var(--reject); }
+  .reco-why .reco-stat { color: inherit; opacity: .75; }
+
+  .note-area {
+    width: 100%; min-height: 110px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+    font-size: 15px; line-height: 1.5; background: #fff; color: var(--ink);
+  }
+
+  .label-strong { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 22px 0 10px; }
+
+  /* nav buttons */
+  .iv-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 26px; }
+  .btn {
+    padding: 12px 22px; border-radius: 10px; font-size: 15px; font-weight: 600;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+  }
+  .btn:hover { background: var(--light); }
+  .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn.primary:hover { filter: brightness(1.08); background: var(--primary); }
+  .btn.primary:disabled { opacity: .55; cursor: not-allowed; filter: none; }
+  .btn.ghost { background: transparent; }
+
+  .inline-error {
+    background: var(--reject-bg); color: var(--reject); border: 1px solid var(--reject);
+    border-radius: 10px; padding: 12px 16px; font-size: 14px; margin: 14px 0; font-weight: 600;
+  }
+  .inline-error.hide { display: none; }
+
+  /* success */
+  .success-card { max-width: 560px; width: 100%; text-align: center; }
+  .success-card .check-circle {
+    width: 64px; height: 64px; border-radius: 50%; background: var(--pass-bg);
+    display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px;
+  }
+  .success-card .check-circle svg { width: 32px; height: 32px; color: var(--pass); }
+  .success-card h1 { font-size: 30px; margin: 10px 0 6px; }
+  .success-card p.sub { color: var(--muted); margin: 0 0 22px; }
+  .summary {
+    text-align: left; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 22px;
+  }
+  .summary h3 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; font-family: "DM Sans"; font-weight: 700; }
+  .summary table { width: 100%; border-collapse: collapse; }
+  .summary td { padding: 7px 0; font-size: 14.5px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .summary tr:last-child td { border-bottom: none; }
+  .summary td.k { color: var(--muted); width: 42%; }
+  .summary td.v { font-weight: 600; }
+
+  .copy-fallback { margin-top: 16px; text-align: left; }
+  .copy-fallback textarea { width: 100%; min-height: 90px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-family: monospace; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 22px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  .topbar .brand-mark { font-size: 12px; }
+  .topbar .signed { font-size: 13px; color: var(--muted); }
+  .link-btn { background: none; border: none; color: var(--primary); font-weight: 600; font-size: 13px; padding: 0; text-decoration: underline; }
+
+  /* spinner */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* responsive */
+  @media (max-width: 760px) {
+    .stage-cards { grid-template-columns: 1fr; }
+    .iv-grid { grid-template-columns: 1fr; }
+    .sec-nav { position: static; min-width: 0; }
+    .sec-nav ul { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; min-width: 0; }
+    .sec-nav li { white-space: nowrap; border-left: none; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; }
+    .sec-nav li.active { border-left: none; border-bottom-color: var(--primary); }
+    .score-btns button { padding: 14px 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="setup-banner"></div>
+<div id="app"></div>
+
+<script>
+/* =========================================================================
+   CREDENTIALS — replace these two placeholders (see spec §5).
+   - CLIENT_ID: ends in .apps.googleusercontent.com (from Google Cloud Console)
+   - SHEET_ID:  the long string in the Sheet URL between /d/ and /edit
+   You CANNOT finish the OAuth client until this page is live on GitHub Pages,
+   because Google needs the Pages URL as an Authorized JavaScript origin /
+   redirect URI. So: deploy first, then create the OAuth client, then paste
+   the Client ID here and re-push.
+   ========================================================================= */
+const CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+const SHEET_ID  = "YOUR_GOOGLE_SHEET_ID";
+
+const SHEET_TAB = "Pipeline Tracker";
+const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+
+/* ---------- runtime state (in-memory only, per spec) ---------- */
+const state = {
+  screen: "signin",          // signin | home | interview | success
+  accessToken: null,
+  userEmail: null,
+  candidateName: "",
+  stage: null,               // 1 | 2 | 3
+  sectionIdx: 0,
+  data: {},                  // per-stage: { responses:{}, checks:{}, scores:[], decision:null, note:"" }
+  submitting: false,
+  lastSummary: null,
+  lastRowJSON: null,
+};
+
+let tokenClient = null;
+
+/* =========================================================================
+   STAGE CONTENT  (verbatim from spec §4)
+   ========================================================================= */
+const STAGES = {
+  1: {
+    num: 1, label: "Stage 1", title: "Phone screen",
+    who: "Shaina", role: "COO", duration: "5–10 min",
+    sections: [
+      { id: "cover", title: "Cover", blocks: [
+        { t: "callout", script: "Thanks for your interest in tutoring with Wildewood. I’m the COO — I do a quick call with everyone before we move forward. I’ll tell you a bit about what the role looks like, and then I have a few questions for you. The whole thing should take about 5 to 10 minutes." },
+        { t: "checklist", head: "Role overview", items: [
+          "Sessions are 1-on-1, 50 minutes, recurring weekly",
+          "We work with students K–12 in executive functioning, academics, and test prep",
+          "School year: homeschool program 9:30 am–1:30 pm; tutoring generally 3:00–8:00 pm weekdays",
+          "Weekends are flexible — we also accommodate alternative learners during daytime hours",
+          "Locations: Norwood Learning Center, Norwood Campus (Roots, SAT, special programs), Medfield — plus virtual",
+          "Tutors use Google Suite and Teachworks to manage calendar, log student notes, communicate with families",
+          "This is a role, not a gig — we expect ownership and consistency",
+        ] },
+      ]},
+      { id: "questions", title: "Questions", blocks: [
+        { t: "question", q: "What subjects or age groups do you have the most experience with?" },
+        { t: "question", q: "What does your availability look like — afternoons, evenings, weekends?" },
+        { t: "question", q: "Have you tutored through an organization before, or mostly independently?" },
+        { t: "question", q: "What made you reach out to Wildewood specifically?" },
+        { t: "question", q: "Is there anything about the role I described that doesn’t feel like a fit?" },
+      ]},
+      { id: "checklist", title: "Checklist", blocks: [
+        { t: "checklist", head: "End-of-call checklist", items: [
+          "Candidate knows the next step is a Google Form (send within 24 hours)",
+          "Candidate knows the form must be completed before Josh’s interview is scheduled",
+          "You have a clear sense of their availability and whether it aligns with our demand",
+        ] },
+      ]},
+    ],
+    scores: [
+      { lbl: "Availability fit", low: "1: no alignment", high: "4: strong, consistent availability" },
+      { lbl: "Experience signal", low: "1: no direct experience", high: "4: extensive, varied" },
+      { lbl: "Communication", low: "1: unclear or disengaged", high: "4: exceptional, confident, warm" },
+      { lbl: "Genuine interest", low: "1: transactional", high: "4: motivated, did their homework" },
+    ],
+    decisions: [
+      { lbl: "Pass to Josh", kind: "pass" },
+      { lbl: "Hold", kind: "hold" },
+      { lbl: "Do not advance", kind: "reject" },
+    ],
+    noteLabel: "Handoff note",
+    notePlaceholder: "2–3 sentences: candidate summary, availability, subjects, gut read. Flag anything Josh should probe on.",
+  },
+
+  2: {
+    num: 2, label: "Stage 2", title: "First round",
+    who: "Josh", role: "CPO", duration: "20–30 min",
+    sections: [
+      { id: "pre", title: "Pre-interview", blocks: [
+        { t: "checklist", head: "Pre-interview checklist", items: [
+          "You have Shaina’s handoff note and the candidate’s Google Form responses",
+          "You’ve noted any red flags or open questions from Shaina to probe on",
+          "You have this tool open and ready to log responses as you go",
+        ] },
+      ]},
+      { id: "experience", title: "Experience", blocks: [
+        { t: "question", q: "Walk me through a student who was particularly challenging — what made it hard, and what did you do?" },
+        { t: "question", q: "How do you typically structure a first session with a new student?" },
+        { t: "question", q: "Tell me about a time a student wasn’t making progress — how did you respond?" },
+        { t: "question", q: "What’s your approach to communicating with parents or guardians?" },
+        { t: "question", q: "Have you ever had to have a hard conversation with a family? What happened?" },
+      ]},
+      { id: "ef", title: "Executive functioning", blocks: [
+        { t: "callout", note: "We work with many students who struggle with EF. We want to understand the tutor’s own relationship with these skills before asking them to coach others on them." },
+        { t: "question", q: "How would you describe your own executive functioning — where are you strong, and where do you have to work at it?" },
+        { t: "question", q: "Have you ever built a system or strategy that genuinely changed how you function? Walk me through it." },
+        { t: "question", q: "If a student said ‘I just can’t get myself to start anything,’ what would you say — and does any part of that feel familiar to you?" },
+        { t: "info", text: "Listen for: Tutors who have genuinely wrestled with EF tend to be better coaches. A perfectly polished self-report is a mild yellow flag." },
+      ]},
+      { id: "personality", title: "Personality", blocks: [
+        { t: "callout", script: "If a student could describe you in three words after working with you for a month, what would you hope they say — and what would you be worried they might actually say?" },
+        { t: "info", text: "Listen for: self-awareness and honesty. A candidate who only gives the flattering answer is worth noting." },
+        { t: "question", q: "Response" },
+      ]},
+      { id: "teaching", title: "Teaching prompt", blocks: [
+        { t: "callout", script: "Last question — no wrong answer here. Tell me about the last book, show, or movie you actually finished. Explain it to me like I’m a curious 7th grader who’s never heard of it.", note: "After they finish, ask: “What was the hardest part to explain?” — The follow-up is where you see real teaching instinct. Someone who says “honestly nothing, it was pretty straightforward” is not thinking carefully about the student’s experience." },
+        { t: "field", label: "Topic they chose and how they explained it" },
+        { t: "field", label: "“What was the hardest part to explain?” — their answer" },
+      ]},
+      { id: "fit", title: "Fit", blocks: [
+        { t: "question", q: "What do you know about how we operate — have you looked at anything about WEO?" },
+        { t: "question", q: "What would make this role worth committing to long-term for you?" },
+        { t: "question", q: "Anything about your background you want me to know that I haven’t asked about?" },
+        { t: "checklist", head: "End-of-interview checklist", items: [
+          "Candidate understands there is a final round with Tara (CLO) if they advance",
+          "Candidate knows the final round focuses on teaching quality and coaching ability",
+        ] },
+      ]},
+    ],
+    scores: [
+      { lbl: "Student relationship depth", low: "1: surface", high: "4: specific and real" },
+      { lbl: "EF self-awareness", low: "1: none", high: "4: honest and specific" },
+      { lbl: "Teaching instinct", low: "1: content-only", high: "4: student-centered" },
+      { lbl: "Culture fit", low: "1: misaligned", high: "4: strong fit" },
+    ],
+    decisions: [
+      { lbl: "Pass to Tara", kind: "pass" },
+      { lbl: "Hold", kind: "hold" },
+      { lbl: "Do not advance", kind: "reject" },
+    ],
+    noteLabel: "Handoff note",
+    notePlaceholder: "Strengths, concerns, and whether you think they know how to teach or just know the content. Flag explicitly if teaching ability is the open question.",
+  },
+
+  3: {
+    num: 3, label: "Stage 3", title: "Final round",
+    who: "Tara", role: "CLO", duration: "45–60 min",
+    sections: [
+      { id: "pre", title: "Pre-interview", blocks: [
+        { t: "checklist", head: "Pre-interview checklist", items: [
+          "You have Josh’s handoff note and his explicit open question about this candidate",
+          "You have Shaina’s original screen notes and the Google Form responses",
+          "You know whether Josh flagged teaching ability as the specific open question",
+          "Candidate-facing topic sheet is ready for the mock lesson",
+        ] },
+      ]},
+      { id: "philosophy", title: "Teaching philosophy", blocks: [
+        { t: "question", q: "How do you figure out where a student actually is — not just where their grade says they are?" },
+        { t: "question", q: "What’s the difference between a student who doesn’t get it yet and a student who has stopped trying?" },
+        { t: "question", q: "How do you adapt mid-session when something isn’t landing?" },
+        { t: "question", q: "Describe a moment a student surprised you — in how they struggled or how they succeeded." },
+      ]},
+      { id: "coaching", title: "Coaching + relationship", blocks: [
+        { t: "question", q: "What does a successful tutoring relationship look like to you at the 3-month mark?" },
+        { t: "question", q: "How do you build trust with a student who doesn’t want to be there?" },
+        { t: "question", q: "Have you worked with a student with EF challenges? How did you approach it?" },
+        { t: "question", q: "How do you know when a student is ready to need you less?" },
+      ]},
+      { id: "scenario", title: "Practical scenario", blocks: [
+        { t: "options", head: "Choose one", opts: [
+          { tag: "Option A", text: "A student comes in, opens their backpack, and says ‘I don’t even know why I’m here, I’m never going to get this.’ Walk me through what you do in the next five minutes." },
+          { tag: "Option B", text: "You’re three sessions in with a 9th grader who seems engaged but isn’t retaining anything. The parent emails asking why there’s no progress. What do you do — and what do you say?" },
+        ] },
+        { t: "field", label: "Scenario used (note A or B) + what they did first" },
+        { t: "field", label: "What stood out — positive or concerning" },
+        { t: "info", text: "Listen for: does the candidate center the student, or default to content and logistics? Does Option A candidate address emotion first? Does Option B candidate reflect on their own teaching before the student?" },
+      ]},
+      { id: "mock", title: "Mock lesson", blocks: [
+        { t: "callout", script: "Take about 5 minutes to look over the topic list and pick something you feel confident teaching. Choose the grade level too. When you’re ready, teach it to me as if I’m your student and we’re in a real session. You’ve got about 10 minutes.", note: "Tara plays the student. Show confusion at a natural moment and see how they respond." },
+        { t: "field", label: "Topic and grade level they chose" },
+        { t: "field", label: "How they opened — did they check in with the student first or dive into content?" },
+        { t: "field", label: "Clarity, analogies, and pacing" },
+        { t: "field", label: "How they responded when you showed confusion" },
+        { t: "field", label: "Did they check for understanding — how?" },
+        { t: "field", label: "How they closed — summarize, next steps, or just stopped?" },
+        { t: "field", label: "Overall instinct — did this feel like a real session?" },
+        { t: "info", text: "Watch for: best candidates open by orienting the student, not diving into content. They pause to check for understanding. When Tara shows confusion, they find a different way in — not just repeat the same explanation louder." },
+      ]},
+    ],
+    scores: [
+      { lbl: "Teaching quality", low: "1: content dump", high: "4: adaptive and clear" },
+      { lbl: "Coaching ability", low: "1: directive only", high: "4: genuinely coaches" },
+      { lbl: "Student-centeredness", low: "1: self-focused", high: "4: always about the student" },
+      { lbl: "Culture fit", low: "1: misaligned", high: "4: would elevate the team" },
+    ],
+    decisions: [
+      { lbl: "Extend offer", kind: "pass" },
+      { lbl: "Trial placement", kind: "hold" },
+      { lbl: "Do not advance", kind: "reject" },
+    ],
+    noteLabel: "Debrief notes",
+    notePlaceholder: "All three should align before an offer goes out. Include teaching quality, coaching ability, culture fit, and your recommendation.",
+  },
+};
+
+/* =========================================================================
+   HELPERS
+   ========================================================================= */
+const app = () => document.getElementById("app");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function todayMMDDYYYY() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${mm}/${dd}/${d.getFullYear()}`;
+}
+
+function credsMissing() {
+  return CLIENT_ID.startsWith("YOUR_CLIENT_ID") || SHEET_ID === "YOUR_GOOGLE_SHEET_ID" || !CLIENT_ID || !SHEET_ID;
+}
+
+function ensureStageData(stage) {
+  if (!state.data[stage]) {
+    state.data[stage] = { responses: {}, checks: {}, scores: [null, null, null, null], decision: null, note: "", generalNotes: "" };
+  }
+  return state.data[stage];
+}
+
+/* count of response textareas filled across the current stage (incl. note) */
+function stageProgress(stage) {
+  const def = STAGES[stage];
+  const d = ensureStageData(stage);
+  let total = 0, done = 0;
+  def.sections.forEach((sec) => {
+    sec.blocks.forEach((b, bi) => {
+      if (b.t === "question" || b.t === "field") {
+        total++;
+        const key = `${sec.id}_${bi}`;
+        if ((d.responses[key] || "").trim()) done++;
+      }
+    });
+  });
+  // decision section: the note counts as one field
+  total++;
+  if ((d.note || "").trim()) done++;
+  return total === 0 ? 0 : Math.round((done / total) * 100);
+}
+
+function sectionComplete(stage, sec) {
+  const d = ensureStageData(stage);
+  let any = false, all = true;
+  sec.blocks.forEach((b, bi) => {
+    if (b.t === "question" || b.t === "field") {
+      any = true;
+      const key = `${sec.id}_${bi}`;
+      if (!(d.responses[key] || "").trim()) all = false;
+    }
+  });
+  return any && all;
+}
+
+/* recommend a decision from the four 1–4 scores (advisory only) */
+function recommendation(stage) {
+  const def = STAGES[stage];
+  const d = ensureStageData(stage);
+  const n = def.scores.length;
+  const filled = d.scores.filter((v) => v != null);
+  if (filled.length < n) {
+    return { complete: false, remaining: n - filled.length };
+  }
+  const total = d.scores.reduce((a, b) => a + b, 0);
+  const avg = total / n;
+  const lows = d.scores.filter((v) => v === 1).length;
+
+  let kind, why;
+  if (avg >= 3) { kind = "pass"; why = "Strong scores across the board."; }
+  else if (avg >= 2.25) { kind = "hold"; why = "Mixed signal — clear strengths alongside some gaps."; }
+  else { kind = "reject"; why = "Scores fall short on most dimensions."; }
+
+  // a hard 1 on any dimension tempers an otherwise-advancing recommendation
+  if (kind === "pass" && lows > 0) {
+    kind = "hold";
+    why = "Strong overall, but a 1 on at least one dimension is worth weighing before advancing.";
+  }
+
+  const dec = def.decisions.find((x) => x.kind === kind);
+  const maxTotal = n * 4;
+  return { complete: true, kind, label: dec.lbl, why, total, maxTotal, avg };
+}
+
+function recoBoxHTML(stage) {
+  const r = recommendation(stage);
+  if (!r.complete) {
+    return `<div class="reco reco-pending">Score all ${STAGES[stage].scores.length} dimensions to see a suggested decision — ${r.remaining} left.</div>`;
+  }
+  return `<div class="reco reco-${r.kind}">
+      <div class="reco-head">Suggested decision</div>
+      <div class="reco-pick">${esc(r.label)}</div>
+      <div class="reco-why">${esc(r.why)}<br><span class="reco-stat">Total ${r.total}/${r.maxTotal} · average ${r.avg.toFixed(2)} of 4. This is a guide — your call decides.</span></div>
+    </div>`;
+}
+
+/* =========================================================================
+   SETUP BANNER
+   ========================================================================= */
+function renderBanner() {
+  const el = document.getElementById("setup-banner");
+  if (credsMissing()) {
+    el.classList.add("show");
+    el.innerHTML = `<b>Setup needed.</b> This app isn’t connected to Google yet. Open <code>index.html</code> and set
+      <code>CLIENT_ID</code> and <code>SHEET_ID</code> near the bottom of the file.
+      You’ll need to deploy to GitHub Pages first, then create the OAuth client with that URL, then paste the Client ID here. Sign-in and submitting are disabled until both are set.`;
+  } else {
+    el.classList.remove("show");
+  }
+}
+
+/* =========================================================================
+   GOOGLE AUTH
+   ========================================================================= */
+function initAuth() {
+  if (credsMissing()) return;
+  if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
+    // GSI not loaded yet; retry shortly
+    setTimeout(initAuth, 300);
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: (response) => {
+      if (response && response.access_token) {
+        state.accessToken = response.access_token;
+        if (state.screen === "signin") {
+          state.screen = "home";
+        }
+        render();
+        if (pendingAfterAuth) { const fn = pendingAfterAuth; pendingAfterAuth = null; fn(); }
+      }
+    },
+    error_callback: (err) => {
+      authError = "Google sign-in was cancelled or failed. Please try again.";
+      render();
+    },
+  });
+}
+
+let pendingAfterAuth = null;
+let authError = null;
+
+function requestSignIn() {
+  if (credsMissing()) return;
+  authError = null;
+  if (!tokenClient) { initAuth(); }
+  if (tokenClient) {
+    tokenClient.requestAccessToken({ prompt: state.accessToken ? "" : "consent" });
+  } else {
+    authError = "Google sign-in is still loading. Try again in a moment.";
+    render();
+  }
+}
+
+/* =========================================================================
+   SCREENS
+   ========================================================================= */
+const ICON_GOOGLE = `<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72a5.41 5.41 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>`;
+const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICON_CHECK_GREEN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+function screenSignIn() {
+  const disabled = credsMissing();
+  return `
+    <div class="center-screen">
+      <div class="card signin-card">
+        <div class="brand-mark">Wildewood Education Operations</div>
+        <h1>Interview Tool</h1>
+        <p class="sub">Live tutor hiring — three-stage pipeline</p>
+        ${authError ? `<div class="inline-error">${esc(authError)} <button class="link-btn" data-act="signin">Retry</button></div>` : ""}
+        <button class="gbtn" data-act="signin" ${disabled ? "disabled" : ""}>
+          ${ICON_GOOGLE} Sign in with Google
+        </button>
+        ${disabled ? `<p class="sub" style="margin-top:18px;font-size:13px">Sign-in is disabled until credentials are configured (see banner above).</p>` : ""}
+      </div>
+    </div>`;
+}
+
+function topbar() {
+  return `
+    <div class="topbar">
+      <div class="brand-mark">WEO Interview Tool</div>
+      <div class="signed">Signed in &middot; <button class="link-btn" data-act="signout">Sign out</button></div>
+    </div>`;
+}
+
+function screenHome() {
+  const cards = [1, 2, 3].map((n) => {
+    const s = STAGES[n];
+    return `
+      <button class="stage-card stage-${n}" data-act="select-stage" data-stage="${n}">
+        <div class="num">${esc(s.label)}</div>
+        <h3>${esc(s.title)}</h3>
+        <div class="who">${esc(s.who)} · ${esc(s.role)}</div>
+        <div class="meta">${esc(s.duration)}</div>
+        <div class="pill">Start ${esc(s.label)} →</div>
+      </button>`;
+  }).join("");
+
+  return `
+    ${topbar()}
+    <div class="wrap">
+      <div class="home-head">
+        <div class="brand-mark">New interview</div>
+        <h1>Who are you interviewing today?</h1>
+        <p>Enter the candidate’s name, then choose your stage.</p>
+      </div>
+      <div class="name-field">
+        <label for="cand">Candidate name</label>
+        <input id="cand" type="text" placeholder="e.g. Jordan Rivera" value="${esc(state.candidateName)}" data-field="candidateName" autocomplete="off" />
+      </div>
+      <div class="stage-cards">${cards}</div>
+    </div>`;
+}
+
+function renderBlock(stage, sec, b, bi) {
+  const d = ensureStageData(stage);
+  const key = `${sec.id}_${bi}`;
+  if (b.t === "callout") {
+    return `<div class="block"><div class="callout">
+        ${b.script ? `<div class="script">“${esc(b.script)}”</div>` : ""}
+        ${b.note ? `<div class="note">${esc(b.note)}</div>` : ""}
+      </div></div>`;
+  }
+  if (b.t === "info") {
+    return `<div class="block"><div class="info-note">${esc(b.text)}</div></div>`;
+  }
+  if (b.t === "checklist") {
+    const items = b.items.map((it, ii) => {
+      const ck = d.checks[`${key}_${ii}`];
+      return `<div class="check-item ${ck ? "checked" : ""}" data-act="check" data-key="${key}_${ii}">
+          <div class="check-box">${ICON_CHECK}</div>
+          <div class="ck-text">${esc(it)}</div>
+        </div>`;
+    }).join("");
+    return `<div class="block"><div class="check-group">
+        <div class="ck-head">${esc(b.head)}</div>${items}
+      </div></div>`;
+  }
+  if (b.t === "options") {
+    const opts = b.opts.map((o) => `
+      <div class="opt"><div class="opt-tag">${esc(o.tag)}</div><div class="opt-text">“${esc(o.text)}”</div></div>`).join("");
+    return `<div class="block">
+        <div class="ck-head" style="padding:0 0 10px;color:var(--muted);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px">${esc(b.head)}</div>
+        <div class="options">${opts}</div>
+      </div>`;
+  }
+  if (b.t === "question") {
+    const val = d.responses[key] || "";
+    return `<div class="block"><div class="qa">
+        <div class="q"><span class="qnum">Q</span>${esc(b.q)}</div>
+        <textarea data-resp="${key}" placeholder="Notes…" rows="2">${esc(val)}</textarea>
+      </div></div>`;
+  }
+  if (b.t === "field") {
+    const val = d.responses[key] || "";
+    return `<div class="block"><div class="fieldbox">
+        <div class="field-label">${esc(b.label)}</div>
+        <textarea data-resp="${key}" placeholder="…" rows="2">${esc(val)}</textarea>
+      </div></div>`;
+  }
+  return "";
+}
+
+function renderDecisionSection(stage) {
+  const def = STAGES[stage];
+  const d = ensureStageData(stage);
+  const scores = def.scores.map((sc, i) => {
+    const btns = [1, 2, 3, 4].map((v) =>
+      `<button class="${d.scores[i] === v ? "active" : ""}" data-act="score" data-dim="${i}" data-val="${v}">${v}</button>`
+    ).join("");
+    return `<div class="score-dim">
+        <div class="lbl">${esc(sc.lbl)}</div>
+        <div class="score-btns">${btns}</div>
+        <div class="desc"><span>${esc(sc.low)}</span><span>${esc(sc.high)}</span></div>
+      </div>`;
+  }).join("");
+
+  const decBtns = def.decisions.map((dec, i) =>
+    `<button class="${d.decision === i ? "sel " + dec.kind : ""}" data-act="decision" data-idx="${i}">${esc(dec.lbl)}</button>`
+  ).join("");
+
+  return `
+    <h3 class="sec-title">Decision</h3>
+    <div class="label-strong">Scores</div>
+    ${scores}
+    <div id="reco-box">${recoBoxHTML(stage)}</div>
+    <div class="label-strong">Decision</div>
+    <div class="decision-row">${decBtns}</div>
+    <div class="label-strong">${esc(def.noteLabel)}</div>
+    <textarea class="note-area" data-note placeholder="${esc(def.notePlaceholder)}">${esc(d.note)}</textarea>
+    <div class="inline-error hide" id="submit-error"></div>
+    <div class="iv-foot">
+      <button class="btn ghost" data-act="prev">← Back</button>
+      <button class="btn primary" data-act="submit" ${state.submitting ? "disabled" : ""}>
+        ${state.submitting ? '<span class="spinner"></span>Submitting…' : "Submit interview"}
+      </button>
+    </div>`;
+}
+
+function screenInterview() {
+  const stage = state.stage;
+  const def = STAGES[stage];
+  const navItems = def.sections.map((sec, i) =>
+    `<li class="${state.sectionIdx === i ? "active" : ""} ${sectionComplete(stage, sec) ? "done" : ""}" data-act="nav" data-idx="${i}">${esc(sec.title)}<span class="dot"></span></li>`
+  ).join("");
+  const notesIdx = def.sections.length;
+  const decIdx = def.sections.length + 1;
+  const d = ensureStageData(stage);
+  const navNotes = `<li class="${state.sectionIdx === notesIdx ? "active" : ""} ${(d.generalNotes || "").trim() ? "done" : ""}" data-act="nav" data-idx="${notesIdx}">Notes<span class="dot"></span></li>`;
+  const navDecision = `<li class="${state.sectionIdx === decIdx ? "active" : ""}" data-act="nav" data-idx="${decIdx}">Decision<span class="dot"></span></li>`;
+
+  let main;
+  if (state.sectionIdx < def.sections.length) {
+    const sec = def.sections[state.sectionIdx];
+    const body = sec.blocks.map((b, bi) => renderBlock(stage, sec, b, bi)).join("");
+    const isFirst = state.sectionIdx === 0;
+    main = `
+      <h3 class="sec-title">${esc(sec.title)}</h3>
+      ${body}
+      <div class="iv-foot">
+        <button class="btn ghost" data-act="prev" ${isFirst ? "disabled style=visibility:hidden" : ""}>← Back</button>
+        <button class="btn primary" data-act="next">Next →</button>
+      </div>`;
+  } else if (state.sectionIdx === notesIdx) {
+    main = `
+      <h3 class="sec-title">General notes</h3>
+      <div class="info-note" style="margin-bottom:14px">Catch-all for anything off-script — tangents, gut reactions, follow-ups, red or green flags that don’t fit the structured fields above. Saved to the sheet alongside this interview.</div>
+      <textarea class="note-area" data-gnote placeholder="Jot anything here…" style="min-height:260px">${esc(d.generalNotes)}</textarea>
+      <div class="iv-foot">
+        <button class="btn ghost" data-act="prev">← Back</button>
+        <button class="btn primary" data-act="next">Next →</button>
+      </div>`;
+  } else {
+    main = renderDecisionSection(stage);
+  }
+
+  const prog = stageProgress(stage);
+
+  return `
+    ${topbar()}
+    <div class="wrap stage-${stage}">
+      <div class="progress-wrap">
+        <div class="progress-track"><div class="progress-fill" style="width:${prog}%"></div></div>
+      </div>
+      <div class="iv-top">
+        <h2>${esc(def.label)} · ${esc(def.title)}</h2>
+        <div class="candidate">Candidate: <b>${esc(state.candidateName) || "—"}</b> &middot; ${esc(def.who)} (${esc(def.role)})</div>
+      </div>
+      <div class="iv-grid">
+        <nav class="sec-nav"><ul>${navItems}${navNotes}${navDecision}</ul></nav>
+        <div class="sec-main">${main}</div>
+      </div>
+    </div>`;
+}
+
+function screenSuccess() {
+  const s = state.lastSummary || {};
+  const rows = (s.rows || []).map((r) => `<tr><td class="k">${esc(r[0])}</td><td class="v">${esc(r[1])}</td></tr>`).join("");
+  return `
+    ${topbar()}
+    <div class="center-screen">
+      <div class="card success-card stage-${s.stageNum || 1}">
+        <div class="check-circle"><span style="color:var(--pass);display:flex">${ICON_CHECK_GREEN}</span></div>
+        <h1>Interview submitted</h1>
+        <p class="sub">A new row was written to the <b>Pipeline Tracker</b> sheet.</p>
+        <div class="summary">
+          <h3>Written to Google Sheets</h3>
+          <table>${rows}</table>
+        </div>
+        <button class="btn primary" data-act="new-interview">Start new interview</button>
+      </div>
+    </div>`;
+}
+
+function screenSubmitFailed() {
+  // shown inline within the decision view via #submit-error; this is the copy fallback after a hard failure
+  return "";
+}
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+function render() {
+  renderBanner();
+  let html = "";
+  if (state.screen === "signin") html = screenSignIn();
+  else if (state.screen === "home") html = screenHome();
+  else if (state.screen === "interview") html = screenInterview();
+  else if (state.screen === "success") html = screenSuccess();
+  app().innerHTML = html;
+  wireTextareas();
+}
+
+/* auto-expanding textareas + live state binding */
+function wireTextareas() {
+  document.querySelectorAll("textarea[data-resp]").forEach((ta) => {
+    autosize(ta);
+    ta.addEventListener("input", () => {
+      const d = ensureStageData(state.stage);
+      d.responses[ta.getAttribute("data-resp")] = ta.value;
+      autosize(ta);
+      updateProgress();
+      updateNavDone();
+    });
+  });
+  const note = document.querySelector("textarea[data-note]");
+  if (note) {
+    note.addEventListener("input", () => {
+      ensureStageData(state.stage).note = note.value;
+      updateProgress();
+    });
+  }
+  const gnote = document.querySelector("textarea[data-gnote]");
+  if (gnote) {
+    gnote.addEventListener("input", () => {
+      ensureStageData(state.stage).generalNotes = gnote.value;
+    });
+  }
+  const cand = document.querySelector("input[data-field='candidateName']");
+  if (cand) {
+    cand.addEventListener("input", () => { state.candidateName = cand.value; });
+  }
+}
+
+function autosize(ta) {
+  ta.style.height = "auto";
+  ta.style.height = Math.max(64, ta.scrollHeight) + "px";
+}
+
+function updateProgress() {
+  const fill = document.querySelector(".progress-fill");
+  if (fill && state.stage) fill.style.width = stageProgress(state.stage) + "%";
+}
+
+function updateNavDone() {
+  if (state.screen !== "interview") return;
+  const def = STAGES[state.stage];
+  document.querySelectorAll(".sec-nav li[data-act='nav']").forEach((li) => {
+    const idx = parseInt(li.getAttribute("data-idx"), 10);
+    if (idx < def.sections.length) {
+      li.classList.toggle("done", sectionComplete(state.stage, def.sections[idx]));
+    }
+  });
+}
+
+/* =========================================================================
+   EVENT DELEGATION
+   ========================================================================= */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) return;
+  const act = t.getAttribute("data-act");
+
+  if (act === "signin") return requestSignIn();
+
+  if (act === "signout") {
+    if (state.accessToken && typeof google !== "undefined" && google.accounts && google.accounts.oauth2) {
+      try { google.accounts.oauth2.revoke(state.accessToken, () => {}); } catch (_) {}
+    }
+    state.accessToken = null;
+    state.screen = "signin";
+    state.stage = null;
+    return render();
+  }
+
+  if (act === "select-stage") {
+    state.stage = parseInt(t.getAttribute("data-stage"), 10);
+    ensureStageData(state.stage);
+    state.sectionIdx = 0;
+    state.screen = "interview";
+    return render();
+  }
+
+  if (act === "nav") {
+    state.sectionIdx = parseInt(t.getAttribute("data-idx"), 10);
+    return render();
+  }
+
+  if (act === "prev") {
+    if (state.sectionIdx > 0) state.sectionIdx--;
+    return render();
+  }
+  if (act === "next") {
+    const max = STAGES[state.stage].sections.length + 1; // decision index (after Notes)
+    if (state.sectionIdx < max) state.sectionIdx++;
+    return render();
+  }
+
+  if (act === "check") {
+    const d = ensureStageData(state.stage);
+    const key = t.getAttribute("data-key");
+    d.checks[key] = !d.checks[key];
+    t.classList.toggle("checked", d.checks[key]);
+    return;
+  }
+
+  if (act === "score") {
+    const d = ensureStageData(state.stage);
+    const dim = parseInt(t.getAttribute("data-dim"), 10);
+    const val = parseInt(t.getAttribute("data-val"), 10);
+    d.scores[dim] = val;
+    // update active states within this dimension
+    const group = t.parentElement;
+    group.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+    t.classList.add("active");
+    const box = document.getElementById("reco-box");
+    if (box) box.innerHTML = recoBoxHTML(state.stage);
+    return;
+  }
+
+  if (act === "decision") {
+    const d = ensureStageData(state.stage);
+    d.decision = parseInt(t.getAttribute("data-idx"), 10);
+    return render();
+  }
+
+  if (act === "submit") return submitInterview();
+
+  if (act === "new-interview") {
+    state.candidateName = "";
+    state.stage = null;
+    state.data = {};
+    state.sectionIdx = 0;
+    state.screen = "home";
+    return render();
+  }
+});
+
+/* =========================================================================
+   SUBMIT  →  Google Sheets append
+   ========================================================================= */
+function statusFromDecisionKind(kind) {
+  if (kind === "pass") return "Active";
+  if (kind === "hold") return "On Hold";
+  return "Rejected"; // reject
+}
+
+function buildRow(stage) {
+  const def = STAGES[stage];
+  const d = ensureStageData(stage);
+  const date = todayMMDDYYYY();
+  const decision = def.decisions[d.decision];
+  const status = statusFromDecisionKind(decision.kind);
+
+  // 28 columns A..AB, all blank by default
+  const row = new Array(28).fill("");
+  row[0] = state.candidateName.trim(); // A Candidate Name
+  row[1] = date;                        // B Date
+  row[2] = def.label;                   // C Current Stage
+  row[3] = status;                      // D Status
+
+  const sc = d.scores.map((v) => (v == null ? "" : v));
+
+  if (stage === 1) {
+    row[4] = date;       // E stage date
+    row[5] = sc[0];      // F Availability
+    row[6] = sc[1];      // G Experience
+    row[7] = sc[2];      // H Communication
+    row[8] = sc[3];      // I Interest
+    // J total -> blank (sheet formula)
+    row[10] = d.note;    // K Notes
+  } else if (stage === 2) {
+    row[11] = date;      // L stage date
+    row[12] = sc[0];     // M
+    row[13] = sc[1];     // N
+    row[14] = sc[2];     // O
+    row[15] = sc[3];     // P
+    // Q total -> blank
+    row[17] = d.note;    // R Notes
+  } else if (stage === 3) {
+    row[18] = date;      // S stage date
+    row[19] = sc[0];     // T
+    row[20] = sc[1];     // U
+    row[21] = sc[2];     // V
+    row[22] = sc[3];     // W
+    // X total -> blank
+    row[24] = d.note;    // Y Notes
+    row[25] = decision.lbl; // Z Final Decision
+    // AA Offer Date -> blank
+  }
+
+  row[27] = d.generalNotes || ""; // AB General Notes (all stages)
+  return { row, status, date, decision };
+}
+
+function validateSubmit(stage) {
+  if (!state.candidateName.trim()) return "Candidate name is required — add it before submitting.";
+  const d = ensureStageData(stage);
+  if (d.decision == null) return "Choose a decision before submitting.";
+  return null;
+}
+
+function showSubmitError(msg, withCopy) {
+  const box = document.getElementById("submit-error");
+  if (!box) return;
+  box.classList.remove("hide");
+  box.innerHTML = esc(msg) + (withCopy ? ` <button class="link-btn" data-act="copy-data">Copy data</button>` : "");
+}
+
+async function submitInterview() {
+  const stage = state.stage;
+  const err = validateSubmit(stage);
+  if (err) { showSubmitError(err, false); return; }
+
+  if (credsMissing()) {
+    showSubmitError("Google Sheet isn’t configured yet (CLIENT_ID / SHEET_ID). See the setup banner.", false);
+    return;
+  }
+
+  if (!state.accessToken) {
+    // need auth before submit
+    pendingAfterAuth = submitInterview;
+    requestSignIn();
+    return;
+  }
+
+  const built = buildRow(stage);
+  state.lastRowJSON = JSON.stringify({ values: [built.row] }, null, 2);
+
+  state.submitting = true;
+  render();
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A:AB:append?valueInputOption=USER_ENTERED`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${state.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [built.row] }),
+    });
+
+    if (res.status === 401) {
+      // token expired mid-session: re-auth then retry once
+      state.submitting = false;
+      state.accessToken = null;
+      pendingAfterAuth = submitInterview;
+      render();
+      requestSignIn();
+      return;
+    }
+
+    if (!res.ok) {
+      const txt = await res.text();
+      state.submitting = false;
+      render();
+      showSubmitError(`Sheets API error (${res.status}): ${txt.slice(0, 300)}`, true);
+      return;
+    }
+
+    // success — build summary
+    const def = STAGES[stage];
+    const summaryRows = [
+      ["Candidate", state.candidateName.trim()],
+      ["Stage", def.label + " — " + def.title],
+      ["Date", built.date],
+      ["Status", built.status],
+      ["Decision", built.decision.lbl],
+    ];
+    def.scores.forEach((sc, i) => {
+      const v = ensureStageData(stage).scores[i];
+      summaryRows.push([sc.lbl, v == null ? "—" : String(v)]);
+    });
+    const note = ensureStageData(stage).note.trim();
+    summaryRows.push([def.noteLabel, note || "—"]);
+    const gnote = ensureStageData(stage).generalNotes.trim();
+    summaryRows.push(["General notes", gnote || "—"]);
+
+    state.lastSummary = { stageNum: stage, rows: summaryRows };
+    state.submitting = false;
+    state.screen = "success";
+    render();
+  } catch (ex) {
+    state.submitting = false;
+    render();
+    showSubmitError("Network error reaching Google Sheets: " + (ex && ex.message ? ex.message : ex) + ". Your data is safe — copy it below.", true);
+  }
+}
+
+/* copy-to-clipboard fallback so data isn’t lost on hard failure */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act='copy-data']");
+  if (!t) return;
+  const payload = state.lastRowJSON || "";
+  navigator.clipboard.writeText(payload).then(
+    () => { t.textContent = "Copied ✓"; },
+    () => {
+      // fallback: show a textarea to copy manually
+      const box = document.getElementById("submit-error");
+      if (box) {
+        box.innerHTML += `<div class="copy-fallback"><textarea readonly>${esc(payload)}</textarea></div>`;
+      }
+    }
+  );
+});
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+window.addEventListener("load", () => {
+  renderBanner();
+  initAuth();
+  render();
+});
+// initial paint (in case load already fired)
+render();
+</script>
+</body>
+</html>
