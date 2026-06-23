@@ -421,6 +421,29 @@
   .md-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 12px 0 4px; }
   .md-pre { white-space: pre-wrap; font-size: 14px; line-height: 1.5; background: var(--bg); border-radius: 8px; padding: 10px 12px; color: var(--ink); }
 
+  /* intake form display */
+  .form-intake { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--primary); border-radius: 0 12px 12px 0; padding: 14px 16px; }
+  .form-intake.fi-muted { color: var(--muted); font-size: 13.5px; font-style: italic; border-left-color: var(--line); }
+  .fi-head { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--primary); }
+  .fi-head span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .fi-contact { font-size: 13.5px; color: var(--ink); margin: 2px 0 10px; }
+  .fi-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 12px 0 6px; display: flex; align-items: center; gap: 10px; }
+  .fi-legend { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+  .fi-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-left: 8px; }
+  .fi-avail { display: grid; grid-template-columns: 1fr; gap: 3px; }
+  .fi-day { font-size: 13px; line-height: 1.4; }
+  .fi-day span { display: inline-block; min-width: 86px; font-weight: 700; color: var(--ink); }
+  .fi-cat { font-size: 13px; font-weight: 700; color: var(--ink); margin: 8px 0 4px; }
+  .fi-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fi-chip { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; }
+  .fi-chip.lvl-conf, i.lvl-conf { background: #EAF3DE; color: #27500A; }
+  .fi-chip.lvl-comf, i.lvl-comf { background: #FBF1DC; color: #B07A00; }
+  .fi-fields { display: grid; gap: 4px; }
+  .fi-field { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; border-bottom: 1px dotted var(--line); padding: 4px 0; }
+  .fi-field span { color: var(--muted); flex: 0 0 auto; }
+  .fi-field b { text-align: right; color: var(--ink); font-weight: 600; }
+  .md-intake { margin-bottom: 18px; }
+
   /* spinner */
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -459,6 +482,7 @@ const CLIENT_ID = "381196048626-ovpqr9hvfgvfnppmf8n48lnuoqp1hnav.apps.googleuser
 const SHEET_ID  = "1JOtpgUlqOp-0R25CM1I1pkLqrrNg4hEPiyi3pUJX4TA";
 
 const SHEET_TAB = "Pipeline Tracker";
+const FORM_TAB = "Form Responses 1"; // the tab the availability/subjects Google Form feeds into
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
 // Wildewood Education logo (base64 PNG, inlined to keep this a single self-contained file)
@@ -485,6 +509,11 @@ const state = {
   pipelineLoading: false,
   pipelineError: null,
   selectedCandidate: null,   // name of candidate open in the detail modal
+  // intake form responses (availability + subject comfort)
+  formByName: {},            // normalizedName -> parsed response
+  formLoading: false,
+  formError: null,
+  formLoaded: false,
 };
 
 let tokenClient = null;
@@ -544,6 +573,7 @@ const STAGES = {
     who: "Josh", role: "CPO", duration: "20–30 min",
     sections: [
       { id: "pre", title: "Pre-interview", blocks: [
+        { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
           "You have Shaina’s handoff note and the candidate’s Google Form responses",
           "You’ve noted any red flags or open questions from Shaina to probe on",
@@ -604,6 +634,7 @@ const STAGES = {
     who: "Tara", role: "CLO", duration: "45–60 min",
     sections: [
       { id: "pre", title: "Pre-interview", blocks: [
+        { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
           "You have Josh’s handoff note and his explicit open question about this candidate",
           "You have Shaina’s original screen notes and the Google Form responses",
@@ -794,6 +825,7 @@ function initAuth() {
         }
         render();
         loadCandidates();
+        loadFormResponses();
         if (pendingAfterAuth) { const fn = pendingAfterAuth; pendingAfterAuth = null; fn(); }
       }
     },
@@ -925,6 +957,111 @@ async function loadPipeline() {
     state.pipelineError = (ex && ex.message) ? ex.message : String(ex);
     if (state.screen === "pipeline") render();
   }
+}
+
+/* ---- INTAKE FORM: read the form-responses tab, parse + index by name ---- */
+function normalizeName(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
+
+function parseFormRow(headers, row) {
+  const out = { name: "", email: "", phone: "", timestamp: "", availability: [], comfortOrder: [], comfort: {}, fields: [] };
+  headers.forEach((rawH, i) => {
+    const H = String(rawH || "").trim();
+    const val = String((row[i] != null ? row[i] : "")).trim();
+    if (/^timestamp$/i.test(H)) { out.timestamp = val; return; }
+    if (/full name/i.test(H)) { out.name = val; return; }
+    if (/email/i.test(H)) { out.email = val; return; }
+    if (/phone/i.test(H)) { out.phone = val; return; }
+    if (/weekly availability/i.test(H)) {
+      const day = (H.match(/\[(.+?)\]/) || [])[1] || H;
+      if (val && !/unavailable all day/i.test(val)) out.availability.push({ day: day, value: val });
+      return;
+    }
+    if (/comfort levels/i.test(H)) {
+      const cat = H.replace(/\[.*\]/, "").replace(/comfort levels/i, "").replace(/subject/i, "").trim();
+      const subj = (H.match(/\[(.+?)\]/) || [])[1] || H;
+      if (/^(confident|comfortable)$/i.test(val)) {
+        if (!out.comfort[cat]) { out.comfort[cat] = []; out.comfortOrder.push(cat); }
+        out.comfort[cat].push({ subject: subj, level: val });
+      }
+      return;
+    }
+    if (!val) return;
+    if (/foreign languages you are comfortable/i.test(H)) out.fields.push({ label: "Foreign languages", value: val });
+    else if (/ap courses/i.test(H)) out.fields.push({ label: "AP courses", value: val });
+    else if (/other subjects/i.test(H)) out.fields.push({ label: "Other subjects", value: val });
+    else if (/grades you have experience/i.test(H)) out.fields.push({ label: "Grades experienced with", value: val });
+    else if (/minimum number of students/i.test(H)) out.fields.push({ label: "Min students to commit", value: val });
+    else if (/preferred format/i.test(H)) out.fields.push({ label: "Preferred format", value: val });
+    else if (/comfortable are you using virtual/i.test(H)) out.fields.push({ label: "Virtual-tools comfort", value: val + " / 5" });
+    else if (/reliable transportation/i.test(H)) out.fields.push({ label: "Reliable transportation", value: val });
+    else if (/want us to know/i.test(H)) out.fields.push({ label: "Note from applicant", value: val });
+  });
+  return out;
+}
+
+async function loadFormResponses(force) {
+  if (!state.accessToken || credsMissing()) return;
+  if (state.formLoaded && !force) return;
+  state.formLoading = true;
+  state.formError = null;
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(FORM_TAB)}!A:BZ`;
+    const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` } });
+    if (res.status === 401) { state.accessToken = null; state.formLoading = false; state.formError = "Session expired."; return; }
+    if (res.status === 400 || res.status === 404) {
+      // tab probably not found / renamed
+      state.formLoading = false;
+      state.formError = `Couldn’t find a tab named “${FORM_TAB}”. If the form’s tab has a different name, tell me and I’ll update it.`;
+      state.formLoaded = true;
+      return;
+    }
+    if (!res.ok) { const txt = await res.text(); throw new Error(`${res.status}: ${txt.slice(0, 140)}`); }
+    const data = await res.json();
+    const rows = data.values || [];
+    const headers = rows[0] || [];
+    const map = {};
+    for (let i = 1; i < rows.length; i++) {
+      const parsed = parseFormRow(headers, rows[i]);
+      if (parsed.name) map[normalizeName(parsed.name)] = parsed; // later (newer) rows win
+    }
+    state.formByName = map;
+    state.formLoaded = true;
+    state.formLoading = false;
+    if (state.screen === "pipeline" || state.screen === "interview") render();
+  } catch (ex) {
+    state.formLoading = false;
+    state.formError = (ex && ex.message) ? ex.message : String(ex);
+  }
+}
+
+function getFormFor(name) { return state.formByName[normalizeName(name)] || null; }
+
+function formIntakeHTML(name) {
+  if (state.formLoading && !state.formLoaded) return `<div class="form-intake fi-muted">Loading intake form…</div>`;
+  const f = getFormFor(name);
+  if (!f) {
+    const why = state.formError ? esc(state.formError) : `No matching intake form for “${esc(name)}” yet — they may not have submitted it, or the name differs from the form.`;
+    return `<div class="form-intake fi-muted">${why}</div>`;
+  }
+  const avail = f.availability.length
+    ? `<div class="fi-avail">${f.availability.map((a) => `<div class="fi-day"><span>${esc(a.day)}</span>${esc(a.value)}</div>`).join("")}</div>`
+    : `<div class="fi-muted">No weekday availability marked.</div>`;
+  const comfort = f.comfortOrder.length
+    ? f.comfortOrder.map((cat) => `<div class="fi-cat">${esc(cat)}</div><div class="fi-chips">${f.comfort[cat].map((s) => `<span class="fi-chip ${/confident/i.test(s.level) ? "lvl-conf" : "lvl-comf"}">${esc(s.subject)}</span>`).join("")}</div>`).join("")
+    : `<div class="fi-muted">No subjects marked confident/comfortable.</div>`;
+  const fields = f.fields.length
+    ? `<div class="fi-fields">${f.fields.map((x) => `<div class="fi-field"><span>${esc(x.label)}</span><b>${esc(x.value)}</b></div>`).join("")}</div>`
+    : "";
+  return `
+    <div class="form-intake">
+      <div class="fi-head">Intake form ${f.timestamp ? `<span>submitted ${esc(f.timestamp)}</span>` : ""}</div>
+      <div class="fi-contact">${esc(f.email)}${f.phone ? " · " + esc(f.phone) : ""}</div>
+      <div class="fi-sub">Availability</div>
+      ${avail}
+      <div class="fi-sub">Subject comfort <span class="fi-legend"><i class="lvl-conf"></i>confident <i class="lvl-comf"></i>comfortable</span></div>
+      ${comfort}
+      ${fields ? `<div class="fi-sub">Logistics &amp; background</div>${fields}` : ""}
+    </div>`;
 }
 
 function requestSignIn() {
@@ -1078,6 +1215,9 @@ function renderBlock(stage, sec, b, bi) {
         <div class="field-label">${esc(b.label)}</div>
         <textarea data-resp="${key}" placeholder="…" rows="2">${esc(val)}</textarea>
       </div></div>`;
+  }
+  if (b.t === "form") {
+    return `<div class="block">${formIntakeHTML(state.candidateName)}</div>`;
   }
   return "";
 }
@@ -1294,6 +1434,8 @@ function candidateModal(name) {
       </div>`;
   }).join("");
 
+  const intake = `<div class="md-intake">${formIntakeHTML(cand.name)}</div>`;
+
   return `
     <div class="modal-overlay" data-act="close-candidate">
       <div class="modal" data-stop="1">
@@ -1301,6 +1443,7 @@ function candidateModal(name) {
           <h2>${esc(cand.name)}</h2>
           <button class="modal-x" data-act="close-candidate">✕</button>
         </div>
+        ${intake}
         ${stagesHtml || `<p class="sub">No stage details saved yet.</p>`}
       </div>
     </div>`;
@@ -1401,6 +1544,7 @@ document.addEventListener("click", (e) => {
     state.screen = "pipeline";
     render();
     loadPipeline();
+    loadFormResponses();
     return;
   }
 
@@ -1412,7 +1556,7 @@ document.addEventListener("click", (e) => {
     return;
   }
 
-  if (act === "reload-pipeline") return loadPipeline();
+  if (act === "reload-pipeline") { loadPipeline(); loadFormResponses(true); return; }
 
   if (act === "open-candidate") {
     state.selectedCandidate = t.getAttribute("data-name");
@@ -1447,7 +1591,9 @@ document.addEventListener("click", (e) => {
     ensureStageData(stage);
     state.sectionIdx = 0;
     state.screen = "interview";
-    return render();
+    render();
+    if (stage >= 2) loadFormResponses();
+    return;
   }
 
   if (act === "nav") {
