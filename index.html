@@ -392,6 +392,22 @@
   .pipe-chip.chip-s3 { background: #EEEDFE; border-color: #dcdaf6; }
   .pipe-chip.chip-hold { background: #FBF1DC; border-color: #efe0bc; }
   .pipe-chip.chip-offer { background: #E3F3EA; border-color: #c6e6d2; }
+  .chip-track { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .chip-track.track-tutoring { background: #EAF3DE; color: #27500A; }
+  .chip-track.track-homeschool { background: #EEEDFE; color: #3C3489; }
+
+  /* track selector (home) */
+  .track-tabs { display: flex; gap: 10px; margin: 4px 0 4px; }
+  .track-tab { flex: 1; text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 16px; cursor: pointer; font-size: 15px; font-weight: 700; color: var(--muted); transition: border-color .1s, color .1s; }
+  .track-tab span { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .track-tab:hover { border-color: var(--ink); }
+  .track-tab.active { border-color: var(--ink); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+  /* pipeline track filter */
+  .pipe-filter { display: flex; gap: 8px; margin-bottom: 14px; }
+  .pf { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .pf:hover { color: var(--ink); }
+  .pf.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 
   .declined-strip { margin-top: 18px; padding: 14px 16px; background: #fff; border: 1px dashed var(--line); border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .declined-strip .dl-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-right: 4px; }
@@ -493,6 +509,7 @@ const state = {
   screen: "signin",          // signin | home | interview | success
   accessToken: null,
   userEmail: null,
+  track: "tutoring",         // which interview track: "tutoring" | "homeschool"
   candidateName: "",         // free-text name for a NEW (Stage 1) candidate
   selectedExisting: "",      // name picked from dropdown for Stage 2/3
   candidates: [],            // [{name, stage, status, date, stageNum}] read from the sheet
@@ -508,6 +525,7 @@ const state = {
   pipeline: [],              // [{name, furthest, lane, stages:{1,2,3}}]
   pipelineLoading: false,
   pipelineError: null,
+  pipelineFilter: "all",     // "all" | "tutoring" | "homeschool"
   selectedCandidate: null,   // name of candidate open in the detail modal
   // intake form responses (availability + subject comfort)
   formByName: {},            // normalizedName -> parsed response
@@ -519,9 +537,10 @@ const state = {
 let tokenClient = null;
 
 /* =========================================================================
-   STAGE CONTENT  (verbatim from spec §4)
+   STAGE CONTENT
+   Two tracks (Tutoring + Homeschool), each with a 3-stage flow.
    ========================================================================= */
-const STAGES = {
+const TUTORING_STAGES = {
   1: {
     num: 1, label: "Stage 1", title: "Phone screen",
     who: "Shaina", role: "COO", duration: "5–10 min",
@@ -691,6 +710,151 @@ const STAGES = {
   },
 };
 
+const HOMESCHOOL_STAGES = {
+  1: {
+    num: 1, label: "Stage 1", title: "Screen",
+    who: "Shaina", role: "COO", duration: "5–10 min",
+    sections: [
+      { id: "cover", title: "Cover", blocks: [
+        { t: "callout", script: "Thanks for your interest in our homeschool program. I do a quick call with everyone first. Our program runs weekday mornings, 9:30 to 1:30, with students who often learn very differently from a traditional classroom. I’ll tell you a bit about it, then I have a few questions — about 5 to 10 minutes." },
+        { t: "checklist", head: "Program overview", items: [
+          "Weekday mornings, 9:30 am–1:30 pm, on a consistent schedule",
+          "Small-group and 1-on-1 instruction across ages and subjects",
+          "Many students are alternative learners — different pacing, learning differences, or a hard history with school",
+          "We build around the student, not a fixed curriculum timeline",
+          "Staff use Google Suite and Teachworks for planning, notes, and family communication",
+          "This is a role, not a gig — we expect consistency and ownership",
+        ] },
+      ]},
+      { id: "questions", title: "Questions", blocks: [
+        { t: "question", q: "Tell me about your teaching or classroom experience — what settings, ages, and subjects?" },
+        { t: "question", q: "What draws you to homeschool or small-group teaching over a traditional classroom?" },
+        { t: "question", q: "What does your weekday-morning availability look like — we run 9:30 to 1:30?" },
+        { t: "question", q: "Have you worked with alternative learners — kids with learning differences, anxiety, or a rough history with school?" },
+        { t: "question", q: "Is there anything about the program I described that doesn’t feel like a fit?" },
+      ]},
+      { id: "checklist", title: "Checklist", blocks: [
+        { t: "checklist", head: "End-of-call checklist", items: [
+          "Candidate knows the next step is a Google Form (send within 24 hours)",
+          "Candidate knows the form must be completed before the next interview is scheduled",
+          "You have a clear sense of their morning availability and whether it fits our schedule",
+        ] },
+      ]},
+    ],
+    scores: [
+      { lbl: "Teaching foundation", low: "1: minimal", high: "4: deep, varied experience" },
+      { lbl: "Alternative-learner exposure", low: "1: none", high: "4: extensive and specific" },
+      { lbl: "Communication", low: "1: unclear or flat", high: "4: warm, confident, present" },
+      { lbl: "Genuine interest & fit", low: "1: transactional", high: "4: motivated, mission-aligned" },
+    ],
+    decisions: [ { lbl: "Pass to Josh", kind: "pass" }, { lbl: "Hold", kind: "hold" }, { lbl: "Do not advance", kind: "reject" } ],
+    noteLabel: "Handoff note",
+    notePlaceholder: "2–3 sentences: background, availability, alternative-learner exposure, gut read. Flag anything Josh should probe on.",
+  },
+
+  2: {
+    num: 2, label: "Stage 2", title: "First round",
+    who: "Josh", role: "CPO", duration: "20–30 min",
+    sections: [
+      { id: "pre", title: "Pre-interview", blocks: [
+        { t: "form" },
+        { t: "checklist", head: "Pre-interview checklist", items: [
+          "You have Shaina’s handoff note and the candidate’s Google Form responses",
+          "You’ve noted any red flags or open questions to probe on",
+          "You have this tool open and ready to log responses as you go",
+        ] },
+      ]},
+      { id: "traditional", title: "Traditional schooling", blocks: [
+        { t: "question", q: "Traditional school runs on standardized pacing, curriculum, and testing. What parts of that structure actually serve kids — and what parts get in the way?" },
+        { t: "question", q: "How would you structure a weekday morning for a small group of students working at different levels?" },
+      ]},
+      { id: "alt", title: "Alternative learners", blocks: [
+        { t: "callout", note: "Many of our students learn very differently and have struggled in traditional settings. We want specific, real experience — not theory." },
+        { t: "question", q: "Tell me about a student who learned very differently from their peers. How did you figure out what they needed, and what did you change?" },
+        { t: "question", q: "Have you worked with kids who have learning differences, anxiety, or a rough history with school? What did that look like day to day?" },
+        { t: "question", q: "How do you build a room where a kid who’s been labeled ‘behind’ or ‘difficult’ feels safe enough to try?" },
+      ]},
+      { id: "adapt", title: "Adaptability & patience", blocks: [
+        { t: "question", q: "Walk me through a session where a student flat-out didn’t want to be there. What did you actually do?" },
+        { t: "question", q: "When a plan isn’t working in the moment, how do you decide whether to push, pivot, or pause?" },
+        { t: "question", q: "Tell me about a time you lost your patience — or nearly did. What happened, and what came of it?" },
+        { t: "question", q: "Some days a kid gives you nothing back. How do you show up with the same energy the next day?" },
+        { t: "info", text: "Listen for: specific stories and honest self-awareness. Someone who’s never been frustrated by a student either hasn’t done this work or isn’t being straight with you." },
+      ]},
+    ],
+    scores: [
+      { lbl: "Alternative-learner fluency", low: "1: theory only", high: "4: skilled and specific" },
+      { lbl: "Adaptability", low: "1: rigid", high: "4: flexible, reads the room" },
+      { lbl: "Patience & resilience", low: "1: easily frustrated", high: "4: calm and steady" },
+      { lbl: "Culture fit", low: "1: misaligned", high: "4: strong fit" },
+    ],
+    decisions: [ { lbl: "Pass to Tara", kind: "pass" }, { lbl: "Hold", kind: "hold" }, { lbl: "Do not advance", kind: "reject" } ],
+    noteLabel: "Handoff note",
+    notePlaceholder: "Strengths, concerns, and how they handle a kid who won’t engage. Flag whether ‘how they define success’ is the open question for Tara.",
+  },
+
+  3: {
+    num: 3, label: "Stage 3", title: "Final round",
+    who: "Tara", role: "CLO", duration: "45–60 min",
+    sections: [
+      { id: "pre", title: "Pre-interview", blocks: [
+        { t: "form" },
+        { t: "checklist", head: "Pre-interview checklist", items: [
+          "You have Josh’s handoff note and his open question about this candidate",
+          "You have Shaina’s screen notes and the Google Form responses",
+          "Candidate-facing topic sheet is ready for the mock lesson",
+        ] },
+      ]},
+      { id: "success", title: "Defining success", blocks: [
+        { t: "callout", note: "This is the heart of the interview. With our students you often won’t get through everything — so how a person defines success tells you whether they’ll thrive here or burn out." },
+        { t: "question", q: "When you finish a term with a student, how do you know it went well?" },
+        { t: "question", q: "You often won’t get through all the objectives with these kids — so if ‘we covered everything’ is off the table, what do you actually measure success by?" },
+        { t: "question", q: "Describe a win with a student that would never show up on a report card." },
+        { t: "info", text: "Listen for: growth, trust, engagement, self-regulation, a kid willing to walk back in and try. A candidate whose only yardstick is ‘we finished the material’ is a real flag for this program." },
+      ]},
+      { id: "coaching", title: "Coaching & relationship", blocks: [
+        { t: "question", q: "How do you build trust with a kid who doesn’t want to be there?" },
+        { t: "question", q: "Tell me about a morning where everything went sideways. How did you reset the room?" },
+        { t: "question", q: "How do you handle a parent whose definition of ‘progress’ is different from yours?" },
+        { t: "question", q: "How do you know when a student is ready for more independence?" },
+      ]},
+      { id: "scenario", title: "Practical scenario", blocks: [
+        { t: "options", head: "Choose one", opts: [
+          { tag: "Option A", text: "A 10-year-old shuts down mid-morning, puts their head down, and says ‘I’m stupid, I can’t do this.’ Walk me through your next five minutes." },
+          { tag: "Option B", text: "A student refuses the planned work but will happily talk for an hour about their obsession — dinosaurs, Minecraft, whatever. What do you do with the morning?" },
+        ] },
+        { t: "field", label: "Scenario used (A or B) + what they did first" },
+        { t: "field", label: "What stood out — positive or concerning" },
+        { t: "info", text: "Listen for: do they meet the kid where they are and find the learning in it, or force the plan? Option A — do they address the emotion first? Option B — do they turn the interest into learning?" },
+      ]},
+      { id: "mock", title: "Mock lesson", blocks: [
+        { t: "callout", script: "Take about 5 minutes to pick something you’d feel confident teaching, and a grade level. Then teach it to me as if I’m a student in your morning group — and I’m not especially interested today. You’ve got about 10 minutes.", note: "Tara plays a disengaged / alternative learner. Resist a little; watch whether they adapt and re-engage you rather than just pushing harder." },
+        { t: "field", label: "Topic and grade level they chose" },
+        { t: "field", label: "How they opened — did they connect with the student first or dive into content?" },
+        { t: "field", label: "How they responded when you disengaged" },
+        { t: "field", label: "Did they find a different way in, or just repeat/push?" },
+        { t: "field", label: "How they checked for understanding" },
+        { t: "field", label: "Overall instinct — could you picture this in our program?" },
+      ]},
+    ],
+    scores: [
+      { lbl: "Defines success by growth, not completion", low: "1: completion mindset", high: "4: growth & student-centered" },
+      { lbl: "Teaching quality & adaptability", low: "1: rigid / content dump", high: "4: adaptive and clear" },
+      { lbl: "Coaching & patience", low: "1: directive / rigid", high: "4: genuinely coaches, stays calm" },
+      { lbl: "Culture fit", low: "1: misaligned", high: "4: would elevate the program" },
+    ],
+    decisions: [ { lbl: "Extend offer", kind: "pass" }, { lbl: "Trial placement", kind: "hold" }, { lbl: "Do not advance", kind: "reject" } ],
+    noteLabel: "Debrief notes",
+    notePlaceholder: "Teaching quality, how they define success, coaching & patience, culture fit, and your recommendation. All three should align before an offer.",
+  },
+};
+
+const TRACKS = {
+  tutoring:   { label: "Tutoring",   blurb: "1-on-1 tutors", stages: TUTORING_STAGES },
+  homeschool: { label: "Homeschool", blurb: "Morning program instructors", stages: HOMESCHOOL_STAGES },
+};
+function stagesOf(track) { return (TRACKS[track] || TRACKS.tutoring).stages; }
+
 /* =========================================================================
    HELPERS
    ========================================================================= */
@@ -717,7 +881,7 @@ function ensureStageData(stage) {
 
 /* count of response textareas filled across the current stage (incl. note) */
 function stageProgress(stage) {
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const d = ensureStageData(stage);
   let total = 0, done = 0;
   def.sections.forEach((sec) => {
@@ -750,7 +914,7 @@ function sectionComplete(stage, sec) {
 
 /* recommend a decision from the four 1–4 scores (advisory only) */
 function recommendation(stage) {
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const d = ensureStageData(stage);
   const n = def.scores.length;
   const filled = d.scores.filter((v) => v != null);
@@ -780,7 +944,7 @@ function recommendation(stage) {
 function recoBoxHTML(stage) {
   const r = recommendation(stage);
   if (!r.complete) {
-    return `<div class="reco reco-pending">Score all ${STAGES[stage].scores.length} dimensions to see a suggested decision — ${r.remaining} left.</div>`;
+    return `<div class="reco reco-pending">Score all ${stagesOf(state.track)[stage].scores.length} dimensions to see a suggested decision — ${r.remaining} left.</div>`;
   }
   return `<div class="reco reco-${r.kind}">
       <div class="reco-head">Suggested decision</div>
@@ -839,14 +1003,14 @@ function initAuth() {
 let pendingAfterAuth = null;
 let authError = null;
 
-/* read existing candidates from the sheet (column A name, B date, C stage, D status) */
+/* read existing candidates from the sheet (name, date, stage, status, … program) */
 async function loadCandidates() {
   if (!state.accessToken || credsMissing()) return;
   state.candidatesLoading = true;
   state.candidatesError = null;
   if (state.screen === "home") render();
   try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A2:D`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A2:AD`;
     const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` } });
     if (res.status === 401) {
       state.accessToken = null;
@@ -868,10 +1032,11 @@ async function loadCandidates() {
       const stage = (r[2] || "").trim();
       const status = (r[3] || "").trim();
       const date = (r[1] || "").trim();
+      const track = /homeschool/i.test(String(r[29] || "")) ? "homeschool" : "tutoring";
       const stageNum = parseInt((String(stage).match(/\d/) || [0])[0], 10) || 0;
       const prev = map[name];
       if (!prev || stageNum >= prev.stageNum) {
-        map[name] = { name, stage, status, date, stageNum };
+        map[name] = { name, stage, status, date, stageNum, track };
       }
     });
     state.candidates = Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
@@ -893,7 +1058,7 @@ function showHomeError(msg) {
   }
 }
 
-/* ---- TEAM PIPELINE: read full rows (A:AC) and group by candidate ---- */
+/* ---- TEAM PIPELINE: read full rows (A:AD) and group by candidate ---- */
 function parseSheetRow(r) {
   const stageTxt = String(r[2] || "").trim();
   const stageNum = parseInt((stageTxt.match(/\d/) || [0])[0], 10) || 0;
@@ -911,6 +1076,7 @@ function parseSheetRow(r) {
     finalDec: String(r[25] || "").trim(),
     general: String(r[27] || "").trim(),
     qa: String(r[28] || "").trim(),
+    track: /homeschool/i.test(String(r[29] || "")) ? "homeschool" : "tutoring",
     scores: scores,
     note: note,
   };
@@ -932,7 +1098,7 @@ async function loadPipeline() {
   state.pipelineError = null;
   if (state.screen === "pipeline") render();
   try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A2:AC`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A2:AD`;
     const res = await fetch(url, { headers: { "Authorization": `Bearer ${state.accessToken}` } });
     if (res.status === 401) { state.accessToken = null; state.pipelineLoading = false; state.pipelineError = "Session expired — sign in again."; if (state.screen === "pipeline") render(); return; }
     if (!res.ok) { const txt = await res.text(); throw new Error(`${res.status}: ${txt.slice(0, 140)}`); }
@@ -941,10 +1107,10 @@ async function loadPipeline() {
     const byName = {};
     rows.forEach((e) => {
       let c = byName[e.name];
-      if (!c) { c = byName[e.name] = { name: e.name, furthest: 0, stages: {} }; }
+      if (!c) { c = byName[e.name] = { name: e.name, furthest: 0, stages: {}, track: e.track }; }
       // keep latest entry per stage (later rows overwrite earlier)
       c.stages[e.stageNum] = e;
-      if (e.stageNum >= c.furthest) c.furthest = e.stageNum;
+      if (e.stageNum >= c.furthest) { c.furthest = e.stageNum; c.track = e.track; }
     });
     const cands = Object.values(byName);
     cands.forEach((c) => { c.lane = laneFor(c); });
@@ -1116,7 +1282,7 @@ function topbar() {
 
 function screenHome() {
   const cards = [1, 2, 3].map((n) => {
-    const s = STAGES[n];
+    const s = stagesOf(state.track)[n];
     return `
       <button class="stage-card stage-${n}" data-act="select-stage" data-stage="${n}">
         <div class="num">${esc(s.label)}</div>
@@ -1127,17 +1293,23 @@ function screenHome() {
       </button>`;
   }).join("");
 
-  // returning-candidate dropdown
+  const trackTabs = Object.keys(TRACKS).map((k) =>
+    `<button class="track-tab ${state.track === k ? "active" : ""}" data-act="set-track" data-track="${k}">
+      ${esc(TRACKS[k].label)}<span>${esc(TRACKS[k].blurb)}</span>
+    </button>`).join("");
+
+  // returning-candidate dropdown — only candidates in the current track
+  const trackCands = state.candidates.filter((c) => (c.track || "tutoring") === state.track);
   let dropdown;
   if (state.candidatesLoading) {
     dropdown = `<select disabled><option>Loading candidates…</option></select>`;
   } else if (state.candidatesError) {
     dropdown = `<select disabled><option>Couldn’t load the list</option></select>
       <div class="nb-hint" style="color:var(--reject)">${esc(state.candidatesError)} <button class="link-btn" data-act="reload-candidates">Try again</button></div>`;
-  } else if (!state.candidates.length) {
-    dropdown = `<select disabled><option>No candidates yet — run a Stage 1 first</option></select>`;
+  } else if (!trackCands.length) {
+    dropdown = `<select disabled><option>No ${esc(TRACKS[state.track].label)} candidates yet — run a Stage 1 first</option></select>`;
   } else {
-    const opts = state.candidates.map((c) => {
+    const opts = trackCands.map((c) => {
       const lbl = `${c.name}${c.stage ? " — " + c.stage : ""}${c.status ? " · " + c.status : ""}`;
       return `<option value="${esc(c.name)}" ${state.selectedExisting === c.name ? "selected" : ""}>${esc(lbl)}</option>`;
     }).join("");
@@ -1151,8 +1323,9 @@ function screenHome() {
       <div class="home-head">
         <div class="brand-mark">New interview</div>
         <h1>Who are you interviewing today?</h1>
-        <p>Adding a <b>new</b> candidate? Type their name (that’s a Stage 1 screen). Continuing with someone? Pick them from the list so all their stages stay together.</p>
+        <p>Pick the role, then the candidate. Adding a <b>new</b> candidate? Type their name (that’s a Stage 1 screen). Continuing with someone? Pick them from the list so all their stages stay together.</p>
       </div>
+      <div class="track-tabs">${trackTabs}</div>
       <div class="cand-grid">
         <div class="nb-card">
           <div class="nb-title">New candidate</div>
@@ -1223,7 +1396,7 @@ function renderBlock(stage, sec, b, bi) {
 }
 
 function renderDecisionSection(stage) {
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const d = ensureStageData(stage);
   const scores = def.scores.map((sc, i) => {
     const btns = [1, 2, 3, 4].map((v) =>
@@ -1260,7 +1433,7 @@ function renderDecisionSection(stage) {
 
 function screenInterview() {
   const stage = state.stage;
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const navItems = def.sections.map((sec, i) =>
     `<li class="${state.sectionIdx === i ? "active" : ""} ${sectionComplete(stage, sec) ? "done" : ""}" data-act="nav" data-idx="${i}">${esc(sec.title)}<span class="dot"></span></li>`
   ).join("");
@@ -1366,14 +1539,20 @@ function screenPipeline() {
   } else if (state.pipelineError) {
     body = `<div class="inline-error">${esc(state.pipelineError)} <button class="link-btn" data-act="reload-pipeline">Try again</button></div>`;
   } else {
+    const filtered = state.pipelineFilter === "all"
+      ? state.pipeline
+      : state.pipeline.filter((c) => (c.track || "tutoring") === state.pipelineFilter);
+    const showTag = state.pipelineFilter === "all";
+
     const lanes = { s1: [], s2: [], s3: [], outcome: [], declined: [] };
-    state.pipeline.forEach((c) => { (lanes[c.lane] || lanes.declined).push(c); });
+    filtered.forEach((c) => { (lanes[c.lane] || lanes.declined).push(c); });
 
     const board = LANE_DEFS.map((L) => {
       const chips = lanes[L.key].map((c) => {
         const m = chipMeta(c);
+        const tag = showTag ? `<span class="chip-track track-${c.track || "tutoring"}">${esc((TRACKS[c.track] || TRACKS.tutoring).label)}</span>` : "";
         return `<button class="pipe-chip ${m.cls}" data-act="open-candidate" data-name="${esc(c.name)}">
-            <span class="chip-name">${esc(c.name)}</span><span class="chip-sub">${esc(m.sub)}</span>
+            <span class="chip-name">${esc(c.name)}${tag}</span><span class="chip-sub">${esc(m.sub)}</span>
           </button>`;
       }).join("") || `<div class="lane-empty">—</div>`;
       return `<div class="pipe-lane ${L.cls}">
@@ -1389,10 +1568,13 @@ function screenPipeline() {
         }).join("")}</div>`
       : "";
 
-    body = state.pipeline.length
+    body = filtered.length
       ? `<div class="pipe-board">${board}</div>${declined}`
-      : `<div class="pipe-status">No candidates yet — submit a Stage 1 interview to populate the board.</div>`;
+      : `<div class="pipe-status">No ${state.pipelineFilter === "all" ? "" : esc(TRACKS[state.pipelineFilter].label) + " "}candidates yet — submit a Stage 1 interview to populate the board.</div>`;
   }
+
+  const filterTabs = `<div class="pipe-filter">${["all", "tutoring", "homeschool"].map((k) =>
+    `<button class="pf ${state.pipelineFilter === k ? "active" : ""}" data-act="pipe-filter" data-filter="${k}">${k === "all" ? "All" : esc(TRACKS[k].label)}</button>`).join("")}</div>`;
 
   const modal = state.selectedCandidate ? candidateModal(state.selectedCandidate) : "";
 
@@ -1404,6 +1586,7 @@ function screenPipeline() {
         <h1>Candidate pipeline</h1>
         <p>Everyone’s candidates in one place. Click a name to read their scores, decisions, and notes across every stage. <button class="link-btn" data-act="reload-pipeline">Refresh</button></p>
       </div>
+      ${filterTabs}
       ${body}
     </div>
     ${modal}`;
@@ -1415,7 +1598,7 @@ function candidateModal(name) {
   const stagesHtml = [1, 2, 3].map((sn) => {
     const e = cand.stages[sn];
     if (!e) return "";
-    const def = STAGES[sn];
+    const def = stagesOf(cand.track)[sn];
     const scoreLines = def.scores.map((sc, i) => {
       const v = e.scores[i];
       return `<div class="md-score"><span>${esc(sc.lbl)}</span><b>${v == null ? "—" : esc(String(v))}</b></div>`;
@@ -1508,7 +1691,7 @@ function updateProgress() {
 
 function updateNavDone() {
   if (state.screen !== "interview") return;
-  const def = STAGES[state.stage];
+  const def = stagesOf(state.track)[state.stage];
   document.querySelectorAll(".sec-nav li[data-act='nav']").forEach((li) => {
     const idx = parseInt(li.getAttribute("data-idx"), 10);
     if (idx < def.sections.length) {
@@ -1537,6 +1720,12 @@ document.addEventListener("click", (e) => {
     return render();
   }
 
+  if (act === "set-track") {
+    state.track = t.getAttribute("data-track");
+    state.selectedExisting = "";
+    return render();
+  }
+
   if (act === "reload-candidates") return loadCandidates();
 
   if (act === "view-pipeline") {
@@ -1557,6 +1746,11 @@ document.addEventListener("click", (e) => {
   }
 
   if (act === "reload-pipeline") { loadPipeline(); loadFormResponses(true); return; }
+
+  if (act === "pipe-filter") {
+    state.pipelineFilter = t.getAttribute("data-filter");
+    return render();
+  }
 
   if (act === "open-candidate") {
     state.selectedCandidate = t.getAttribute("data-name");
@@ -1606,7 +1800,7 @@ document.addEventListener("click", (e) => {
     return render();
   }
   if (act === "next") {
-    const max = STAGES[state.stage].sections.length + 1; // decision index (after Notes)
+    const max = stagesOf(state.track)[state.stage].sections.length + 1; // decision index (after Notes)
     if (state.sectionIdx < max) state.sectionIdx++;
     return render();
   }
@@ -1665,7 +1859,7 @@ function statusFromDecisionKind(kind) {
 
 /* bulleted TL;DR of every answered question/field for this stage */
 function buildQASummary(stage) {
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const d = ensureStageData(stage);
   const lines = [];
   def.sections.forEach((sec) => {
@@ -1680,14 +1874,14 @@ function buildQASummary(stage) {
 }
 
 function buildRow(stage) {
-  const def = STAGES[stage];
+  const def = stagesOf(state.track)[stage];
   const d = ensureStageData(stage);
   const date = todayMMDDYYYY();
   const decision = def.decisions[d.decision];
   const status = statusFromDecisionKind(decision.kind);
 
-  // 29 columns A..AC, all blank by default
-  const row = new Array(29).fill("");
+  // 30 columns A..AD, all blank by default
+  const row = new Array(30).fill("");
   row[0] = state.candidateName.trim(); // A Candidate Name
   row[1] = date;                        // B Date
   row[2] = def.label;                   // C Current Stage
@@ -1725,6 +1919,7 @@ function buildRow(stage) {
 
   row[27] = d.generalNotes || ""; // AB General Notes (all stages)
   row[28] = buildQASummary(stage); // AC Q&A summary (all stages)
+  row[29] = (TRACKS[state.track] || TRACKS.tutoring).label; // AD Program (Tutoring / Homeschool)
   return { row, status, date, decision };
 }
 
@@ -1766,7 +1961,7 @@ async function submitInterview() {
   render();
 
   try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A:AC:append?valueInputOption=USER_ENTERED`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_TAB)}!A:AD:append?valueInputOption=USER_ENTERED`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -1795,7 +1990,7 @@ async function submitInterview() {
     }
 
     // success — build summary
-    const def = STAGES[stage];
+    const def = stagesOf(state.track)[stage];
     const summaryRows = [
       ["Candidate", state.candidateName.trim()],
       ["Stage", def.label + " — " + def.title],
