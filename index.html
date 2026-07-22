@@ -458,7 +458,15 @@
   .md-row .md-k { color: var(--muted); }
   .md-row .md-v { font-weight: 700; }
   .md-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 12px 0 4px; }
+  .md-sub .md-obj { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--muted); margin-left: 6px; font-style: italic; }
   .md-pre { white-space: pre-wrap; font-size: 14px; line-height: 1.5; background: var(--bg); border-radius: 8px; padding: 10px 12px; color: var(--ink); }
+
+  /* blind rounds */
+  .md-reveal-bar { background: #FBF5E9; border: 1px solid #E8D9B5; border-radius: 12px; padding: 12px 14px; margin: 6px 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .md-reveal-bar.revealed { background: var(--bg); border-color: var(--line); font-size: 13px; color: var(--muted); }
+  .md-reveal-txt { font-size: 13.5px; line-height: 1.45; color: var(--ink); flex: 1; min-width: 200px; }
+  .md-blind { font-size: 13px; color: var(--muted); font-style: italic; background: var(--bg); border: 1px dashed var(--line); border-radius: 8px; padding: 9px 12px; }
+  .btn.small { padding: 8px 14px; font-size: 13px; white-space: nowrap; }
 
   /* intake form display */
   .form-intake { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--primary); border-radius: 0 12px 12px 0; padding: 14px 16px; }
@@ -550,6 +558,7 @@ const state = {
   pipelineError: null,
   pipelineFilter: "all",     // "all" | "tutoring" | "homeschool"
   selectedCandidate: null,   // name of candidate open in the detail modal
+  revealOpinions: false,     // blind rounds: prior scores/decisions/notes hidden until explicitly revealed
   // intake form responses (availability + subject comfort)
   formByName: {},            // normalizedName -> parsed response
   formLoading: false,
@@ -617,13 +626,18 @@ const TUTORING_STAGES = {
       { id: "pre", title: "Pre-interview", blocks: [
         { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
-          "You have Shaina’s handoff note and the candidate’s Google Form responses",
-          "You’ve noted any red flags or open questions from Shaina to probe on",
+          "You have the candidate’s Google Form responses and intake details",
+          "Blind round: form your own read first — don’t reveal earlier scores or notes until you’ve logged yours",
           "You have this tool open and ready to log responses as you go",
         ] },
       ]},
       { id: "experience", title: "Experience", blocks: [
-        { t: "question", q: "Walk me through a student who was particularly challenging — what made it hard, and what did you do?" },
+        { t: "star", q: "Walk me through a student who was particularly challenging.", parts: [
+          { k: "s", lbl: "Situation", probe: "Who was the student, and what made it hard?" },
+          { k: "t", lbl: "Task", probe: "What did you need to accomplish with them?" },
+          { k: "a", lbl: "Action", probe: "What did you actually do — step by step?" },
+          { k: "r", lbl: "Result", probe: "How did it turn out, and how do you know?" },
+        ] },
         { t: "question", q: "How do you typically structure a first session with a new student?" },
         { t: "question", q: "Tell me about a time a student wasn’t making progress — how did you respond?" },
         { t: "question", q: "What’s your approach to communicating with parents or guardians?" },
@@ -688,9 +702,8 @@ const TUTORING_STAGES = {
       { id: "pre", title: "Pre-interview", blocks: [
         { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
-          "You have Josh’s handoff note and his explicit open question about this candidate",
-          "You have Shaina’s original screen notes and the Google Form responses",
-          "You know whether Josh flagged teaching ability as the specific open question",
+          "You have the candidate’s Google Form responses and intake details",
+          "Blind round: form your own read first — don’t reveal earlier rounds’ scores or notes until you’ve logged yours",
           "Candidate-facing topic sheet is ready for the mock lesson",
         ] },
       ]},
@@ -698,7 +711,12 @@ const TUTORING_STAGES = {
         { t: "question", q: "How do you figure out where a student actually is — not just where their grade says they are?" },
         { t: "question", q: "What’s the difference between a student who doesn’t get it yet and a student who has stopped trying?" },
         { t: "question", q: "How do you adapt mid-session when something isn’t landing?" },
-        { t: "question", q: "Describe a moment a student surprised you — in how they struggled or how they succeeded." },
+        { t: "star", q: "Describe a moment a student surprised you — in how they struggled or how they succeeded.", parts: [
+          { k: "s", lbl: "Situation", probe: "Set the scene — the student, and what you expected going in." },
+          { k: "t", lbl: "Task", probe: "What were you working toward with them?" },
+          { k: "a", lbl: "Action", probe: "What did you do when they surprised you?" },
+          { k: "r", lbl: "Result", probe: "What came of it — and what did it teach you?" },
+        ] },
       ]},
       { id: "coaching", title: "Coaching + relationship", blocks: [
         { t: "question", q: "What does a successful tutoring relationship look like to you at the 3-month mark?" },
@@ -792,8 +810,8 @@ const HOMESCHOOL_STAGES = {
       { id: "pre", title: "Pre-interview", blocks: [
         { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
-          "You have Shaina’s handoff note and the candidate’s Google Form responses",
-          "You’ve noted any red flags or open questions to probe on",
+          "You have the candidate’s Google Form responses and intake details",
+          "Blind round: form your own read first — don’t reveal earlier scores or notes until you’ve logged yours",
           "You have this tool open and ready to log responses as you go",
         ] },
       ]},
@@ -803,7 +821,12 @@ const HOMESCHOOL_STAGES = {
       ]},
       { id: "alt", title: "Alternative learners", blocks: [
         { t: "callout", note: "Many of our students learn very differently and have struggled in traditional settings. We want specific, real experience — not theory." },
-        { t: "question", q: "Tell me about a student who learned very differently from their peers. How did you figure out what they needed, and what did you change?" },
+        { t: "star", q: "Tell me about a student who learned very differently from their peers.", parts: [
+          { k: "s", lbl: "Situation", probe: "Who was the student, and how did they learn differently?" },
+          { k: "t", lbl: "Task", probe: "What did you need to help them with?" },
+          { k: "a", lbl: "Action", probe: "How did you figure out what they needed, and what did you change?" },
+          { k: "r", lbl: "Result", probe: "What happened as a result?" },
+        ] },
         { t: "question", q: "Have you worked with kids who have learning differences, anxiety, or a rough history with school? What did that look like day to day?" },
         { t: "question", q: "How do you build a room where a kid who’s been labeled ‘behind’ or ‘difficult’ feels safe enough to try?" },
       ]},
@@ -843,8 +866,8 @@ const HOMESCHOOL_STAGES = {
       { id: "pre", title: "Pre-interview", blocks: [
         { t: "form" },
         { t: "checklist", head: "Pre-interview checklist", items: [
-          "You have Josh’s handoff note and his open question about this candidate",
-          "You have Shaina’s screen notes and the Google Form responses",
+          "You have the candidate’s Google Form responses and intake details",
+          "Blind round: form your own read first — don’t reveal earlier rounds’ scores or notes until you’ve logged yours",
           "Candidate-facing topic sheet is ready for the mock lesson",
         ] },
       ]},
@@ -857,7 +880,12 @@ const HOMESCHOOL_STAGES = {
       ]},
       { id: "coaching", title: "Coaching & relationship", blocks: [
         { t: "question", q: "How do you build trust with a kid who doesn’t want to be there?" },
-        { t: "question", q: "Tell me about a morning where everything went sideways. How did you reset the room?" },
+        { t: "star", q: "Tell me about a morning where everything went sideways.", parts: [
+          { k: "s", lbl: "Situation", probe: "What was happening — what made the morning go sideways?" },
+          { k: "t", lbl: "Task", probe: "What did you need to do to get the room back?" },
+          { k: "a", lbl: "Action", probe: "How did you actually reset it?" },
+          { k: "r", lbl: "Result", probe: "How did the rest of the morning go?" },
+        ] },
         { t: "question", q: "How do you handle a parent whose definition of ‘progress’ is different from yours?" },
         { t: "question", q: "How do you know when a student is ready for more independence?" },
       ]},
@@ -1665,29 +1693,48 @@ function screenPipeline() {
 function candidateModal(name) {
   const cand = state.pipeline.find((c) => c.name === name);
   if (!cand) return "";
+  const revealed = state.revealOpinions;
   const stagesHtml = [1, 2, 3].map((sn) => {
     const e = cand.stages[sn];
     if (!e) return "";
     const def = stagesOf(cand.track)[sn];
-    const scoreLines = def.scores.map((sc, i) => {
-      const v = e.scores[i];
-      return `<div class="md-score"><span>${esc(sc.lbl)}</span><b>${v == null ? "—" : esc(String(v))}</b></div>`;
-    }).join("");
-    const decisionLine = sn === 3 && e.finalDec ? `<div class="md-row"><span class="md-k">Final decision</span><span class="md-v">${esc(e.finalDec)}</span></div>` : "";
-    const qa = e.qa ? `<div class="md-sub">Q&amp;A summary</div><div class="md-pre">${esc(e.qa)}</div>` : "";
-    const noteLbl = def.noteLabel;
-    return `
-      <div class="md-stage stage-${sn}">
-        <div class="md-stage-head">${esc(def.label)} · ${esc(def.title)} <span class="md-meta">${esc(e.date)} · ${esc(e.status || "—")}</span></div>
+    // Objective — the candidate's own answers, always shown for continuity
+    const qa = e.qa ? `<div class="md-sub">Q&amp;A summary <span class="md-obj">candidate’s own answers</span></div><div class="md-pre">${esc(e.qa)}</div>` : "";
+
+    // Opinion — scores, decision, status, notes — gated behind the blind reveal
+    let opinionHtml;
+    if (revealed) {
+      const scoreLines = def.scores.map((sc, i) => {
+        const v = e.scores[i];
+        return `<div class="md-score"><span>${esc(sc.lbl)}</span><b>${v == null ? "—" : esc(String(v))}</b></div>`;
+      }).join("");
+      const decisionLine = sn === 3 && e.finalDec ? `<div class="md-row"><span class="md-k">Final decision</span><span class="md-v">${esc(e.finalDec)}</span></div>` : "";
+      opinionHtml = `
         <div class="md-scores">${scoreLines}</div>
         ${decisionLine}
-        ${e.note ? `<div class="md-sub">${esc(noteLbl)}</div><div class="md-pre">${esc(e.note)}</div>` : ""}
+        ${e.note ? `<div class="md-sub">${esc(def.noteLabel)}</div><div class="md-pre">${esc(e.note)}</div>` : ""}
+        ${e.general ? `<div class="md-sub">General notes</div><div class="md-pre">${esc(e.general)}</div>` : ""}`;
+    } else {
+      opinionHtml = `<div class="md-blind">🔒 ${esc(def.who)}’s scores, decision &amp; notes hidden</div>`;
+    }
+
+    const metaExtra = revealed && e.status ? " · " + esc(e.status) : "";
+    return `
+      <div class="md-stage stage-${sn}">
+        <div class="md-stage-head">${esc(def.label)} · ${esc(def.title)} <span class="md-meta">${esc(e.date)}${metaExtra}</span></div>
         ${qa}
-        ${e.general ? `<div class="md-sub">General notes</div><div class="md-pre">${esc(e.general)}</div>` : ""}
+        ${opinionHtml}
       </div>`;
   }).join("");
 
   const intake = `<div class="md-intake">${formIntakeHTML(cand.name)}</div>`;
+
+  const blindBar = revealed
+    ? `<div class="md-reveal-bar revealed">Earlier rounds’ scores &amp; notes are now showing — make sure you logged your own read first.</div>`
+    : `<div class="md-reveal-bar">
+         <div class="md-reveal-txt"><b>Blind round.</b> You can see intake and the candidate’s own answers — but not earlier interviewers’ scores, decisions, or gut reads. Form your own read first.</div>
+         <button class="btn ghost small" data-act="reveal-opinions">Reveal earlier scores &amp; notes (may bias you)</button>
+       </div>`;
 
   return `
     <div class="modal-overlay" data-act="close-candidate">
@@ -1697,6 +1744,7 @@ function candidateModal(name) {
           <button class="modal-x" data-act="close-candidate">✕</button>
         </div>
         ${intake}
+        ${blindBar}
         ${stagesHtml || `<p class="sub">No stage details saved yet.</p>`}
       </div>
     </div>`;
@@ -1832,12 +1880,19 @@ document.addEventListener("click", (e) => {
 
   if (act === "open-candidate") {
     state.selectedCandidate = t.getAttribute("data-name");
+    state.revealOpinions = false; // blind by default each time a candidate is opened
+    return render();
+  }
+
+  if (act === "reveal-opinions") {
+    state.revealOpinions = true;
     return render();
   }
 
   if (act === "close-candidate") {
     if (e.target.classList.contains("modal-overlay") || t.classList.contains("modal-x")) {
       state.selectedCandidate = null;
+      state.revealOpinions = false;
       return render();
     }
     return;
