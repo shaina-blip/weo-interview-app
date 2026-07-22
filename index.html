@@ -266,6 +266,29 @@
   .qa textarea:focus, .fieldbox textarea:focus, .note-area:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
   .fieldbox { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 
+  /* STAR scenario */
+  .star { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .star-q { background: var(--light); padding: 13px 16px; font-size: 15.5px; font-weight: 600; color: var(--ink); }
+  .star-q .qnum { color: var(--primary); font-weight: 700; margin-right: 8px; }
+  .star-cov { display: flex; gap: 7px; align-items: center; padding: 11px 16px 0; }
+  .star-cov .cov-caption { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+  .cov-pill {
+    width: 23px; height: 23px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; border: 1.5px solid var(--line); color: var(--muted); background: #fff; transition: all .12s;
+  }
+  .cov-pill.filled { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .star-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px 16px; }
+  .star-part { display: flex; flex-direction: column; }
+  .star-lbl { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+  .star-letter { color: var(--primary); font-weight: 800; }
+  .star-probe { display: block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+  .star-part textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px;
+    font: inherit; font-size: 14px; line-height: 1.5; color: var(--ink); background: #fff; resize: none; min-height: 60px;
+  }
+  .star-part textarea:focus { outline: 2px solid var(--primary); outline-offset: -2px; }
+  @media (max-width: 640px) { .star-grid { grid-template-columns: 1fr; } }
+
   .options { display: grid; gap: 12px; }
   .opt {
     background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
@@ -606,6 +629,16 @@ const TUTORING_STAGES = {
         { t: "question", q: "What’s your approach to communicating with parents or guardians?" },
         { t: "question", q: "Have you ever had to have a hard conversation with a family? What happened?" },
       ]},
+      { id: "optimism", title: "Optimism", blocks: [
+        { t: "callout", note: "Genuine optimism about a student’s potential is a non-negotiable for every hire — different temperaments are welcome, but no one who has quietly given up on kids works here. This scenario is where you check for it." },
+        { t: "star", q: "Tell me about a student that others had mostly given up on — called lazy, behind, or a lost cause — who you believed could do better. Walk me through it.", parts: [
+          { k: "s", lbl: "Situation", probe: "What was going on? How did others — teachers, parents, the kid — see them?" },
+          { k: "t", lbl: "Task", probe: "What did you decide was actually possible for this student?" },
+          { k: "a", lbl: "Action", probe: "What did you do differently because you believed they could get there?" },
+          { k: "r", lbl: "Result", probe: "What happened — and how did you measure that it went well?" },
+        ] },
+        { t: "info", text: "Listen for: real optimism is a specific kid they backed when others didn’t — with action that actually followed the belief. Flags: they can only describe already-strong students, the optimism stays abstract with no action behind it, or they quietly put the outcome back on the student." },
+      ]},
       { id: "ef", title: "Executive functioning", blocks: [
         { t: "callout", note: "We work with many students who struggle with EF. We want to understand the tutor’s own relationship with these skills before asking them to coach others on them." },
         { t: "question", q: "How would you describe your own executive functioning — where are you strong, and where do you have to work at it?" },
@@ -781,6 +814,16 @@ const HOMESCHOOL_STAGES = {
         { t: "question", q: "Some days a kid gives you nothing back. How do you show up with the same energy the next day?" },
         { t: "info", text: "Listen for: specific stories and honest self-awareness. Someone who’s never been frustrated by a student either hasn’t done this work or isn’t being straight with you." },
       ]},
+      { id: "optimism", title: "Optimism", blocks: [
+        { t: "callout", note: "Genuine optimism about a student’s potential is a non-negotiable for every hire — different temperaments are welcome, but no one who has quietly given up on kids works here. This scenario is where you check for it." },
+        { t: "star", q: "Tell me about a student that others had mostly given up on — called lazy, behind, or a lost cause — who you believed could do better. Walk me through it.", parts: [
+          { k: "s", lbl: "Situation", probe: "What was going on? How did others — teachers, parents, the kid — see them?" },
+          { k: "t", lbl: "Task", probe: "What did you decide was actually possible for this student?" },
+          { k: "a", lbl: "Action", probe: "What did you do differently because you believed they could get there?" },
+          { k: "r", lbl: "Result", probe: "What happened — and how did you measure that it went well?" },
+        ] },
+        { t: "info", text: "Listen for: real optimism is a specific kid they backed when others didn’t — with action that actually followed the belief. Flags: they can only describe already-strong students, the optimism stays abstract with no action behind it, or they quietly put the outcome back on the student." },
+      ]},
     ],
     scores: [
       { lbl: "Alternative-learner fluency", low: "1: theory only", high: "4: skilled and specific" },
@@ -890,6 +933,10 @@ function stageProgress(stage) {
         total++;
         const key = `${sec.id}_${bi}`;
         if ((d.responses[key] || "").trim()) done++;
+      } else if (b.t === "star") {
+        total++;
+        const any = (b.parts || []).some((p) => (d.responses[`${sec.id}_${bi}_${p.k}`] || "").trim());
+        if (any) done++;
       }
     });
   });
@@ -907,6 +954,10 @@ function sectionComplete(stage, sec) {
       any = true;
       const key = `${sec.id}_${bi}`;
       if (!(d.responses[key] || "").trim()) all = false;
+    } else if (b.t === "star") {
+      any = true;
+      const filledAny = (b.parts || []).some((p) => (d.responses[`${sec.id}_${bi}_${p.k}`] || "").trim());
+      if (!filledAny) all = false;
     }
   });
   return any && all;
@@ -1389,6 +1440,25 @@ function renderBlock(stage, sec, b, bi) {
         <textarea data-resp="${key}" placeholder="…" rows="2">${esc(val)}</textarea>
       </div></div>`;
   }
+  if (b.t === "star") {
+    const parts = b.parts || [];
+    const cov = parts.map((p) => {
+      const filled = (d.responses[`${key}_${p.k}`] || "").trim() ? "filled" : "";
+      return `<span class="cov-pill ${filled}" data-cov="${p.k}">${esc(p.lbl[0])}</span>`;
+    }).join("");
+    const grid = parts.map((p) => {
+      const val = d.responses[`${key}_${p.k}`] || "";
+      return `<div class="star-part">
+          <div class="star-lbl"><span class="star-letter">${esc(p.lbl[0])}</span>${esc(p.lbl.slice(1))}<span class="star-probe">${esc(p.probe)}</span></div>
+          <textarea data-resp="${key}_${p.k}" data-star-key="${key}" data-star-part="${p.k}" placeholder="…" rows="2">${esc(val)}</textarea>
+        </div>`;
+    }).join("");
+    return `<div class="block"><div class="star">
+        <div class="star-q"><span class="qnum">★</span>${esc(b.q)}</div>
+        <div class="star-cov" data-star-cov="${key}"><span class="cov-caption">Coverage</span>${cov}</div>
+        <div class="star-grid">${grid}</div>
+      </div></div>`;
+  }
   if (b.t === "form") {
     return `<div class="block">${formIntakeHTML(state.candidateName)}</div>`;
   }
@@ -1656,6 +1726,14 @@ function wireTextareas() {
       updateNavDone();
     });
   });
+  document.querySelectorAll("textarea[data-star-part]").forEach((ta) => {
+    ta.addEventListener("input", () => {
+      const wrap = document.querySelector(`[data-star-cov="${ta.getAttribute("data-star-key")}"]`);
+      if (!wrap) return;
+      const pill = wrap.querySelector(`[data-cov="${ta.getAttribute("data-star-part")}"]`);
+      if (pill) pill.classList.toggle("filled", !!ta.value.trim());
+    });
+  });
   const note = document.querySelector("textarea[data-note]");
   if (note) {
     note.addEventListener("input", () => {
@@ -1867,6 +1945,12 @@ function buildQASummary(stage) {
       if (b.t === "question" || b.t === "field") {
         const ans = (d.responses[`${sec.id}_${bi}`] || "").trim();
         if (ans) lines.push("• " + (b.t === "question" ? b.q : b.label) + "\n   " + ans);
+      } else if (b.t === "star") {
+        const filled = (b.parts || []).map((p) => {
+          const a = (d.responses[`${sec.id}_${bi}_${p.k}`] || "").trim();
+          return a ? "   " + p.lbl + ": " + a : null;
+        }).filter(Boolean);
+        if (filled.length) lines.push("• " + b.q + "\n" + filled.join("\n"));
       }
     });
   });
